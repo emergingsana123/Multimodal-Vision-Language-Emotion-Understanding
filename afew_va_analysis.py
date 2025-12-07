@@ -46,18 +46,18 @@ warnings.filterwarnings('ignore')
 # ============================================================================
 
 # Update this to your actual dataset path
-DATA_DIR = Path('/home/sdeshmukh/Multimodal-Vision-Language-Emotion-Understanding/dataset')
+DATA_DIR = Path('/home_local/sdeshmukh/Multimodal-Vision-Language-Emotion-Understanding/dataset')
 
 # Project output directories
-PROJECT_ROOT = Path('/home/sdeshmukh/Multimodal-Vision-Language-Emotion-Understanding/outputs')
+PROJECT_ROOT = Path('/home_local/sdeshmukh/Multimodal-Vision-Language-Emotion-Understanding/outputs')
 EMBEDDINGS_DIR = PROJECT_ROOT / 'embeddings'
 CHECKPOINTS_DIR = PROJECT_ROOT / 'checkpoints'
 VISUALIZATIONS_DIR = PROJECT_ROOT / 'visualizations'
 RESULTS_DIR = PROJECT_ROOT / 'results'
 
 # Create all output directories
-for directory in [PROJECT_ROOT, EMBEDDINGS_DIR, CHECKPOINTS_DIR, VISUALIZATIONS_DIR, RESULTS_DIR]:
-    directory.mkdir(parents=True, exist_ok=True)
+#for directory in [PROJECT_ROOT, EMBEDDINGS_DIR, CHECKPOINTS_DIR, VISUALIZATIONS_DIR, RESULTS_DIR]:
+#   directory.mkdir(parents=True, exist_ok=True)
 
 # Set random seeds for reproducibility
 RANDOM_SEED = 42

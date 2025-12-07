@@ -27,7 +27,7 @@ plt.rcParams['font.size'] = 10
 # CONFIGURATION - Match your main script paths
 # ===========================================================================
 
-PROJECT_ROOT = Path('/home/sdeshmukh/Multimodal-Vision-Language-Emotion-Understanding/outputs')
+PROJECT_ROOT = Path('/home_local/sdeshmukh/Multimodal-Vision-Language-Emotion-Understanding/outputs')
 EMBEDDINGS_DIR = PROJECT_ROOT / 'embeddings'
 VISUALIZATIONS_DIR = PROJECT_ROOT / 'visualizations'
 RESULTS_DIR = PROJECT_ROOT / 'results'
