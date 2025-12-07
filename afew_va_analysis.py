@@ -297,6 +297,21 @@ def apply_umap(embeddings, config):
     
     return embeddings_2d, embeddings_scaled
 
+def apply_tsne(embeddings, n_components=2):
+    """Apply t-SNE dimensionality reduction."""
+    print("\n" + "="*80)
+    print("APPLYING t-SNE DIMENSIONALITY REDUCTION")
+    print("="*80)
+    
+    tsne = TSNE(n_components=n_components, random_state=RANDOM_SEED, perplexity=30)
+    embeddings_2d = tsne.fit_transform(embeddings)
+    
+    print(f"Reduced embeddings shape: {embeddings_2d.shape}")
+    
+    np.save(RESULTS_DIR / 'tsne_embeddings_2d.npy', embeddings_2d)
+    
+    return embeddings_2d
+
 
 def apply_pca(embeddings_scaled, n_components=50):
     """Apply PCA dimensionality reduction with comprehensive analysis."""
