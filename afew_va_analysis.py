@@ -1,7 +1,13 @@
 #!/usr/bin/env python3
 """
-AFEW-VA Dataset Analysis Script - Modified for University VM
-Extracts embeddings, performs analysis, and generates visualizations
+AFEW-VA Dataset Complete Analysis Pipeline - Enhanced Version
+Includes ALL analyses from the original notebook:
+- BLIP-2 embedding extraction
+- UMAP and t-SNE dimensionality reduction
+- PCA validation analysis
+- Comprehensive correlation analysis (Pearson & Spearman)
+- Temporal dynamics analysis
+- Multiple visualization outputs
 """
 
 import os
@@ -33,6 +39,7 @@ import torchvision.transforms as transforms
 
 from transformers import Blip2Processor, Blip2Model
 from sklearn.manifold import TSNE
+from sklearn.decomposition import PCA
 from sklearn.metrics import silhouette_score, davies_bouldin_score, calinski_harabasz_score
 from scipy.stats import pearsonr, spearmanr
 from scipy.spatial.distance import pdist, squareform, cdist
@@ -40,6 +47,11 @@ from sklearn.preprocessing import StandardScaler
 import umap
 
 warnings.filterwarnings('ignore')
+
+# Set plotting style
+sns.set_style("whitegrid")
+plt.rcParams['figure.dpi'] = 150
+plt.rcParams['font.size'] = 10
 
 # ============================================================================
 # CONFIGURATION - MODIFY THESE PATHS FOR YOUR VM
@@ -57,7 +69,7 @@ RESULTS_DIR = PROJECT_ROOT / 'results'
 
 # Create all output directories
 #for directory in [PROJECT_ROOT, EMBEDDINGS_DIR, CHECKPOINTS_DIR, VISUALIZATIONS_DIR, RESULTS_DIR]:
-#   directory.mkdir(parents=True, exist_ok=True)
+#    directory.mkdir(parents=True, exist_ok=True)
 
 # Set random seeds for reproducibility
 RANDOM_SEED = 42
@@ -77,6 +89,7 @@ CONFIG = {
     'umap_min_dist': 0.1,
     'umap_n_components': 2,
     'umap_metric': 'cosine',
+    'pca_n_components': 50,
     'checkpoint_frequency': 100,
 }
 
@@ -85,7 +98,7 @@ with open(PROJECT_ROOT / 'config.json', 'w') as f:
     json.dump(CONFIG, f, indent=2)
 
 print("="*80)
-print("AFEW-VA Analysis Pipeline - University VM Version")
+print("AFEW-VA COMPLETE ANALYSIS PIPELINE - Enhanced Version")
 print("="*80)
 print(f"PyTorch version: {torch.__version__}")
 print(f"CUDA available: {torch.cuda.is_available()}")
@@ -158,6 +171,8 @@ def load_afew_va_dataset(data_dir: Path):
     print(f"  Total clips: {df['clip_name'].nunique()}")
     print(f"  Valence range: [{df['valence'].min():.3f}, {df['valence'].max():.3f}]")
     print(f"  Arousal range: [{df['arousal'].min():.3f}, {df['arousal'].max():.3f}]")
+    print(f"  Valence distribution: μ={df['valence'].mean():.2f}, σ={df['valence'].std():.2f}")
+    print(f"  Arousal distribution: μ={df['arousal'].mean():.2f}, σ={df['arousal'].std():.2f}")
     
     return df
 
@@ -258,6 +273,15 @@ def extract_embeddings(model, processor, dataframe, batch_size=16, device='cuda'
         f.create_dataset('valence', data=metadata_df['valence'].values)
         f.create_dataset('arousal', data=metadata_df['arousal'].values)
     
+    # Also save as pickle for compatibility
+    with open(EMBEDDINGS_DIR / 'embeddings.pkl', 'wb') as f:
+        pickle.dump({
+            'embeddings': embeddings_array,
+            'valences': metadata_df['valence'].values,
+            'arousals': metadata_df['arousal'].values,
+            'metadata': metadata_df
+        }, f)
+    
     metadata_df.to_csv(EMBEDDINGS_DIR / 'metadata.csv', index=False)
     print(f"Saved embeddings to: {embeddings_path}")
     
@@ -274,8 +298,7 @@ def apply_umap(embeddings, config):
     print("APPLYING UMAP DIMENSIONALITY REDUCTION")
     print("="*80)
     
-    # Standardize embeddings for better visualization
-    print("Standardizing embeddings...")
+    # Standardize embeddings
     scaler = StandardScaler()
     embeddings_scaled = scaler.fit_transform(embeddings)
     
@@ -295,7 +318,8 @@ def apply_umap(embeddings, config):
     # Save UMAP results
     np.save(RESULTS_DIR / 'umap_embeddings_2d.npy', embeddings_2d)
     
-    return embeddings_2d, embeddings_scaled
+    return embeddings_2d
+
 
 def apply_tsne(embeddings, n_components=2):
     """Apply t-SNE dimensionality reduction."""
@@ -313,28 +337,27 @@ def apply_tsne(embeddings, n_components=2):
     return embeddings_2d
 
 
-def apply_pca(embeddings_scaled, n_components=50):
-    """Apply PCA dimensionality reduction with comprehensive analysis."""
+def apply_pca(embeddings, n_components=50):
+    """Apply PCA for validation and analysis."""
     print("\n" + "="*80)
-    print("APPLYING PCA ANALYSIS")
+    print("APPLYING PCA (VALIDATION & ANALYSIS)")
     print("="*80)
+    
+    # Standardize first
+    scaler = StandardScaler()
+    embeddings_scaled = scaler.fit_transform(embeddings)
     
     pca = PCA(n_components=n_components, random_state=RANDOM_SEED)
     pca_embeddings = pca.fit_transform(embeddings_scaled)
     
-    print(f"PCA complete! Shape: {pca_embeddings.shape}")
-    print(f"Explained variance by first 2 components: {pca.explained_variance_ratio_[:2].sum():.2%}")
+    print(f"PCA embeddings shape: {pca_embeddings.shape}")
     print(f"Explained variance by first 10 components: {pca.explained_variance_ratio_[:10].sum():.2%}")
+    print(f"Components needed for 80% variance: {np.argmax(np.cumsum(pca.explained_variance_ratio_) >= 0.8) + 1}")
+    print(f"Components needed for 90% variance: {np.argmax(np.cumsum(pca.explained_variance_ratio_) >= 0.9) + 1}")
     
-    # Calculate components needed for variance thresholds
-    cumsum = np.cumsum(pca.explained_variance_ratio_)
-    n_80 = np.argmax(cumsum >= 0.8) + 1
-    n_90 = np.argmax(cumsum >= 0.9) + 1
-    
-    print(f"Components for 80% variance: {n_80}")
-    print(f"Components for 90% variance: {n_90}")
-    
-    np.save(RESULTS_DIR / 'pca_embeddings_2d.npy', pca_embeddings[:, :2])
+    # Save PCA results
+    np.save(RESULTS_DIR / 'pca_embeddings.npy', pca_embeddings)
+    np.save(RESULTS_DIR / 'pca_explained_variance.npy', pca.explained_variance_ratio_)
     
     return pca_embeddings, pca
 
@@ -343,72 +366,113 @@ def apply_pca(embeddings_scaled, n_components=50):
 # ANALYSIS FUNCTIONS
 # ============================================================================
 
-def compute_correlations(embeddings_2d_umap, pca_embeddings, metadata_df):
-    """Compute comprehensive correlation analysis between embeddings and valence/arousal."""
+def compute_comprehensive_correlations(embeddings, pca_embeddings, umap_embeddings, metadata_df):
+    """Compute comprehensive correlation analysis (Pearson & Spearman)."""
     print("\n" + "="*80)
-    print("COMPUTING CORRELATION ANALYSIS")
+    print("COMPREHENSIVE CORRELATION ANALYSIS")
     print("="*80)
     
+    valences = metadata_df['valence'].values
+    arousals = metadata_df['arousal'].values
+    
     results = {
-        'pca_valence_pearson': [],
-        'pca_arousal_pearson': [],
-        'pca_valence_spearman': [],
-        'pca_arousal_spearman': [],
-        'pca_valence_pvalue': [],
-        'pca_arousal_pvalue': []
+        'embedding_dim_correlations': {
+            'valence_pearson': [],
+            'arousal_pearson': [],
+            'valence_spearman': [],
+            'arousal_spearman': []
+        },
+        'pca_correlations': {
+            'valence_pearson': [],
+            'arousal_pearson': [],
+            'valence_spearman': [],
+            'arousal_spearman': [],
+            'valence_pvalues': [],
+            'arousal_pvalues': []
+        },
+        'umap_correlations': {
+            'valence_pearson': [],
+            'arousal_pearson': [],
+            'valence_spearman': [],
+            'arousal_spearman': []
+        }
     }
     
-    # PCA correlations (first 10 components)
-    print("\nPCA Component Correlations:")
-    print("-" * 50)
-    for i in range(min(10, pca_embeddings.shape[1])):
-        val_corr_p, val_p = pearsonr(pca_embeddings[:, i], metadata_df['valence'])
-        aro_corr_p, aro_p = pearsonr(pca_embeddings[:, i], metadata_df['arousal'])
-        val_corr_s, _ = spearmanr(pca_embeddings[:, i], metadata_df['valence'])
-        aro_corr_s, _ = spearmanr(pca_embeddings[:, i], metadata_df['arousal'])
+    # 1. Raw embedding dimensions (first 50)
+    print("\nAnalyzing raw embedding dimensions...")
+    for dim in range(min(50, embeddings.shape[1])):
+        val_corr_p, _ = pearsonr(embeddings[:, dim], valences)
+        aro_corr_p, _ = pearsonr(embeddings[:, dim], arousals)
+        val_corr_s, _ = spearmanr(embeddings[:, dim], valences)
+        aro_corr_s, _ = spearmanr(embeddings[:, dim], arousals)
         
-        results['pca_valence_pearson'].append(val_corr_p)
-        results['pca_arousal_pearson'].append(aro_corr_p)
-        results['pca_valence_spearman'].append(val_corr_s)
-        results['pca_arousal_spearman'].append(aro_corr_s)
-        results['pca_valence_pvalue'].append(val_p)
-        results['pca_arousal_pvalue'].append(aro_p)
-        
-        if i < 5:  # Print first 5
-            print(f"PC{i+1}:")
-            print(f"  Valence: Pearson={val_corr_p:+.3f} (p={val_p:.2e}), Spearman={val_corr_s:+.3f}")
-            print(f"  Arousal: Pearson={aro_corr_p:+.3f} (p={aro_p:.2e}), Spearman={aro_corr_s:+.3f}")
+        results['embedding_dim_correlations']['valence_pearson'].append(val_corr_p)
+        results['embedding_dim_correlations']['arousal_pearson'].append(aro_corr_p)
+        results['embedding_dim_correlations']['valence_spearman'].append(val_corr_s)
+        results['embedding_dim_correlations']['arousal_spearman'].append(aro_corr_s)
     
-    # UMAP correlations
-    print("\n" + "-" * 50)
-    print("UMAP Dimension Correlations:")
+    # 2. PCA components
+    print("Analyzing PCA components...")
     print("-" * 50)
-    results['umap_correlations'] = []
-    for i in range(2):
-        val_corr_p, val_p = pearsonr(embeddings_2d_umap[:, i], metadata_df['valence'])
-        aro_corr_p, aro_p = pearsonr(embeddings_2d_umap[:, i], metadata_df['arousal'])
-        val_corr_s, _ = spearmanr(embeddings_2d_umap[:, i], metadata_df['valence'])
-        aro_corr_s, _ = spearmanr(embeddings_2d_umap[:, i], metadata_df['arousal'])
+    for i in range(min(5, pca_embeddings.shape[1])):
+        val_corr_p, val_p = pearsonr(pca_embeddings[:, i], valences)
+        aro_corr_p, aro_p = pearsonr(pca_embeddings[:, i], arousals)
+        val_corr_s, _ = spearmanr(pca_embeddings[:, i], valences)
+        aro_corr_s, _ = spearmanr(pca_embeddings[:, i], arousals)
         
-        results['umap_correlations'].append({
-            'dimension': i+1,
-            'valence_pearson': val_corr_p,
-            'arousal_pearson': aro_corr_p,
-            'valence_spearman': val_corr_s,
-            'arousal_spearman': aro_corr_s,
-            'valence_pvalue': val_p,
-            'arousal_pvalue': aro_p
-        })
+        results['pca_correlations']['valence_pearson'].append(val_corr_p)
+        results['pca_correlations']['arousal_pearson'].append(aro_corr_p)
+        results['pca_correlations']['valence_spearman'].append(val_corr_s)
+        results['pca_correlations']['arousal_spearman'].append(aro_corr_s)
+        results['pca_correlations']['valence_pvalues'].append(val_p)
+        results['pca_correlations']['arousal_pvalues'].append(aro_p)
+        
+        print(f"PC{i+1}:")
+        print(f"  Valence: Pearson={val_corr_p:+.3f} (p={val_p:.2e}), Spearman={val_corr_s:+.3f}")
+        print(f"  Arousal: Pearson={aro_corr_p:+.3f} (p={aro_p:.2e}), Spearman={aro_corr_s:+.3f}")
+    
+    # 3. UMAP dimensions
+    print("\n" + "-" * 50)
+    print("Analyzing UMAP dimensions...")
+    print("-" * 50)
+    for i in range(2):
+        val_corr_p, val_p = pearsonr(umap_embeddings[:, i], valences)
+        aro_corr_p, aro_p = pearsonr(umap_embeddings[:, i], arousals)
+        val_corr_s, _ = spearmanr(umap_embeddings[:, i], valences)
+        aro_corr_s, _ = spearmanr(umap_embeddings[:, i], arousals)
+        
+        results['umap_correlations']['valence_pearson'].append(val_corr_p)
+        results['umap_correlations']['arousal_pearson'].append(aro_corr_p)
+        results['umap_correlations']['valence_spearman'].append(val_corr_s)
+        results['umap_correlations']['arousal_spearman'].append(aro_corr_s)
         
         print(f"UMAP Dim {i+1}:")
         print(f"  Valence: Pearson={val_corr_p:+.3f} (p={val_p:.2e}), Spearman={val_corr_s:+.3f}")
         print(f"  Arousal: Pearson={aro_corr_p:+.3f} (p={aro_p:.2e}), Spearman={aro_corr_s:+.3f}")
     
-    results_df = pd.DataFrame(results)
-    results_df.to_csv(RESULTS_DIR / 'correlation_analysis.csv', index=False)
+    # Save results
+    with open(RESULTS_DIR / 'comprehensive_correlations.json', 'w') as f:
+        # Convert numpy types to native Python types for JSON serialization
+        json_results = {}
+        for key, value in results.items():
+            json_results[key] = {k: [float(x) for x in v] for k, v in value.items()}
+        json.dump(json_results, f, indent=2)
     
-    print(f"\nMax PCA valence correlation: {max(np.abs(results['pca_valence_pearson'])):.4f}")
-    print(f"Max PCA arousal correlation: {max(np.abs(results['pca_arousal_pearson'])):.4f}")
+    # Create correlation summary
+    summary = {
+        'max_valence_pearson_raw': float(max([abs(x) for x in results['embedding_dim_correlations']['valence_pearson']])),
+        'max_arousal_pearson_raw': float(max([abs(x) for x in results['embedding_dim_correlations']['arousal_pearson']])),
+        'max_valence_pearson_pca': float(max([abs(x) for x in results['pca_correlations']['valence_pearson']])),
+        'max_arousal_pearson_pca': float(max([abs(x) for x in results['pca_correlations']['arousal_pearson']])),
+    }
+    
+    print("\n" + "="*80)
+    print("CORRELATION SUMMARY:")
+    print(f"  Max valence correlation (raw): {summary['max_valence_pearson_raw']:.4f}")
+    print(f"  Max arousal correlation (raw): {summary['max_arousal_pearson_raw']:.4f}")
+    print(f"  Max valence correlation (PCA): {summary['max_valence_pearson_pca']:.4f}")
+    print(f"  Max arousal correlation (PCA): {summary['max_arousal_pearson_pca']:.4f}")
+    print("="*80)
     
     return results
 
@@ -442,7 +506,9 @@ def compute_temporal_analysis(embeddings, metadata_df):
                 'valence_change': valence_change,
                 'arousal_change': arousal_change,
                 'mean_valence': clip_meta['valence'].mean(),
-                'mean_arousal': clip_meta['arousal'].mean()
+                'mean_arousal': clip_meta['arousal'].mean(),
+                'std_valence': clip_meta['valence'].std(),
+                'std_arousal': clip_meta['arousal'].std()
             })
     
     temporal_df = pd.DataFrame(temporal_stats)
@@ -450,6 +516,8 @@ def compute_temporal_analysis(embeddings, metadata_df):
     
     print(f"Analyzed {len(temporal_df)} clips")
     print(f"Mean embedding smoothness: {temporal_df['embedding_smoothness'].mean():.4f}")
+    print(f"Mean valence change: {temporal_df['valence_change'].mean():.4f}")
+    print(f"Mean arousal change: {temporal_df['arousal_change'].mean():.4f}")
     
     return temporal_df
 
@@ -458,40 +526,122 @@ def compute_temporal_analysis(embeddings, metadata_df):
 # VISUALIZATION FUNCTIONS
 # ============================================================================
 
-def create_valence_arousal_scatter(embeddings_2d, metadata_df):
-    """Create scatter plot colored by valence and arousal."""
+def create_umap_primary_visualization(umap_embeddings, metadata_df):
+    """Create primary UMAP visualization (matches notebook output)."""
     print("\n" + "="*80)
-    print("CREATING VALENCE-AROUSAL VISUALIZATIONS")
+    print("CREATING PRIMARY UMAP VISUALIZATION")
     print("="*80)
     
-    # Valence plot
-    fig, axes = plt.subplots(1, 2, figsize=(16, 6))
+    fig, axes = plt.subplots(1, 2, figsize=(16, 7))
     
-    scatter1 = axes[0].scatter(embeddings_2d[:, 0], embeddings_2d[:, 1], 
-                               c=metadata_df['valence'], cmap='RdYlGn', 
-                               alpha=0.6, s=20)
-    axes[0].set_title('UMAP Projection colored by Valence', fontsize=14)
-    axes[0].set_xlabel('UMAP 1')
-    axes[0].set_ylabel('UMAP 2')
-    plt.colorbar(scatter1, ax=axes[0], label='Valence')
+    # UMAP colored by Valence
+    scatter1 = axes[0].scatter(
+        umap_embeddings[:, 0],
+        umap_embeddings[:, 1],
+        c=metadata_df['valence'],
+        cmap='RdYlBu_r',  # Red (negative) to Blue (positive)
+        s=8,
+        alpha=0.6,
+        edgecolors='none'
+    )
+    axes[0].set_title('UMAP Projection - Colored by Valence', fontsize=14, fontweight='bold')
+    axes[0].set_xlabel('UMAP Dimension 1', fontsize=12)
+    axes[0].set_ylabel('UMAP Dimension 2', fontsize=12)
+    cbar1 = plt.colorbar(scatter1, ax=axes[0])
+    cbar1.set_label('Valence (Negative ← → Positive)', fontsize=10)
     
-    scatter2 = axes[1].scatter(embeddings_2d[:, 0], embeddings_2d[:, 1], 
-                               c=metadata_df['arousal'], cmap='coolwarm', 
-                               alpha=0.6, s=20)
-    axes[1].set_title('UMAP Projection colored by Arousal', fontsize=14)
-    axes[1].set_xlabel('UMAP 1')
-    axes[1].set_ylabel('UMAP 2')
-    plt.colorbar(scatter2, ax=axes[1], label='Arousal')
+    # UMAP colored by Arousal
+    scatter2 = axes[1].scatter(
+        umap_embeddings[:, 0],
+        umap_embeddings[:, 1],
+        c=metadata_df['arousal'],
+        cmap='YlOrRd',  # Light (low arousal) to Dark (high arousal)
+        s=8,
+        alpha=0.6,
+        edgecolors='none'
+    )
+    axes[1].set_title('UMAP Projection - Colored by Arousal', fontsize=14, fontweight='bold')
+    axes[1].set_xlabel('UMAP Dimension 1', fontsize=12)
+    axes[1].set_ylabel('UMAP Dimension 2', fontsize=12)
+    cbar2 = plt.colorbar(scatter2, ax=axes[1])
+    cbar2.set_label('Arousal (Low ← → High)', fontsize=10)
     
     plt.tight_layout()
-    plt.savefig(VISUALIZATIONS_DIR / 'valence_arousal_scatter.png', dpi=300, bbox_inches='tight')
+    plt.savefig(VISUALIZATIONS_DIR / 'umap_primary_visualization.png', dpi=150, bbox_inches='tight')
     plt.close()
     
-    print(f"Saved: valence_arousal_scatter.png")
+    print("✅ Saved: umap_primary_visualization.png")
+
+
+def create_pca_validation_plots(pca_embeddings, pca, metadata_df):
+    """Create comprehensive PCA validation plots (matches notebook)."""
+    print("\n" + "="*80)
+    print("CREATING PCA VALIDATION VISUALIZATION")
+    print("="*80)
+    
+    fig, axes = plt.subplots(2, 2, figsize=(16, 14))
+    
+    # PCA colored by Valence
+    scatter1 = axes[0, 0].scatter(
+        pca_embeddings[:, 0],
+        pca_embeddings[:, 1],
+        c=metadata_df['valence'],
+        cmap='RdYlBu_r',
+        s=8,
+        alpha=0.6,
+        edgecolors='none'
+    )
+    axes[0, 0].set_title('PCA Projection - Colored by Valence', fontsize=14, fontweight='bold')
+    axes[0, 0].set_xlabel(f'PC1 ({pca.explained_variance_ratio_[0]:.1%} var)', fontsize=11)
+    axes[0, 0].set_ylabel(f'PC2 ({pca.explained_variance_ratio_[1]:.1%} var)', fontsize=11)
+    cbar1 = plt.colorbar(scatter1, ax=axes[0, 0])
+    cbar1.set_label('Valence', fontsize=10)
+    
+    # PCA colored by Arousal
+    scatter2 = axes[0, 1].scatter(
+        pca_embeddings[:, 0],
+        pca_embeddings[:, 1],
+        c=metadata_df['arousal'],
+        cmap='YlOrRd',
+        s=8,
+        alpha=0.6,
+        edgecolors='none'
+    )
+    axes[0, 1].set_title('PCA Projection - Colored by Arousal', fontsize=14, fontweight='bold')
+    axes[0, 1].set_xlabel(f'PC1 ({pca.explained_variance_ratio_[0]:.1%} var)', fontsize=11)
+    axes[0, 1].set_ylabel(f'PC2 ({pca.explained_variance_ratio_[1]:.1%} var)', fontsize=11)
+    cbar2 = plt.colorbar(scatter2, ax=axes[0, 1])
+    cbar2.set_label('Arousal', fontsize=10)
+    
+    # Scree plot - Explained variance
+    axes[1, 0].plot(range(1, 21), pca.explained_variance_ratio_[:20], 'bo-', linewidth=2, markersize=6)
+    axes[1, 0].set_title('PCA Scree Plot - Explained Variance', fontsize=14, fontweight='bold')
+    axes[1, 0].set_xlabel('Principal Component', fontsize=11)
+    axes[1, 0].set_ylabel('Explained Variance Ratio', fontsize=11)
+    axes[1, 0].grid(True, alpha=0.3)
+    
+    # Cumulative explained variance
+    cumsum = np.cumsum(pca.explained_variance_ratio_[:20])
+    axes[1, 1].plot(range(1, 21), cumsum, 'ro-', linewidth=2, markersize=6)
+    axes[1, 1].axhline(y=0.8, color='g', linestyle='--', label='80% variance', linewidth=2)
+    axes[1, 1].axhline(y=0.9, color='orange', linestyle='--', label='90% variance', linewidth=2)
+    axes[1, 1].set_title('PCA Cumulative Explained Variance', fontsize=14, fontweight='bold')
+    axes[1, 1].set_xlabel('Number of Components', fontsize=11)
+    axes[1, 1].set_ylabel('Cumulative Explained Variance', fontsize=11)
+    axes[1, 1].legend()
+    axes[1, 1].grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    plt.savefig(VISUALIZATIONS_DIR / 'pca_validation_analysis.png', dpi=150, bbox_inches='tight')
+    plt.close()
+    
+    print("✅ Saved: pca_validation_analysis.png")
 
 
 def create_2d_va_space_plot(metadata_df):
     """Create 2D valence-arousal space plot."""
+    print("\nCreating 2D Valence-Arousal space plot...")
+    
     fig, ax = plt.subplots(figsize=(10, 10))
     
     scatter = ax.scatter(metadata_df['valence'], metadata_df['arousal'], 
@@ -508,32 +658,13 @@ def create_2d_va_space_plot(metadata_df):
     plt.savefig(VISUALIZATIONS_DIR / '2d_valence_arousal_space.png', dpi=300, bbox_inches='tight')
     plt.close()
     
-    print(f"Saved: 2d_valence_arousal_space.png")
-
-
-def create_correlation_heatmap(correlations):
-    """Create heatmap of dimension correlations."""
-    fig, ax = plt.subplots(figsize=(12, 6))
-    
-    corr_matrix = np.array([correlations['valence_correlations'], 
-                           correlations['arousal_correlations']])
-    
-    sns.heatmap(corr_matrix, cmap='coolwarm', center=0, 
-                yticklabels=['Valence', 'Arousal'],
-                xticklabels=[f'Dim{i}' for i in range(corr_matrix.shape[1])],
-                ax=ax, cbar_kws={'label': 'Correlation'})
-    
-    ax.set_title('Embedding Dimension Correlations with V/A', fontsize=14)
-    
-    plt.tight_layout()
-    plt.savefig(VISUALIZATIONS_DIR / 'dimension_correlations.png', dpi=300, bbox_inches='tight')
-    plt.close()
-    
-    print(f"Saved: dimension_correlations.png")
+    print("✅ Saved: 2d_valence_arousal_space.png")
 
 
 def create_temporal_plots(temporal_df):
     """Create temporal analysis visualizations."""
+    print("\nCreating temporal analysis plots...")
+    
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
     
     # Smoothness distribution
@@ -565,13 +696,13 @@ def create_temporal_plots(temporal_df):
     plt.savefig(VISUALIZATIONS_DIR / 'temporal_analysis.png', dpi=300, bbox_inches='tight')
     plt.close()
     
-    print(f"Saved: temporal_analysis.png")
+    print("✅ Saved: temporal_analysis.png")
 
 
-def create_summary_report(metadata_df, embeddings, correlations, temporal_df):
-    """Create a summary report of all analyses."""
+def create_summary_report(metadata_df, embeddings, pca, correlations, temporal_df):
+    """Create a comprehensive summary report."""
     print("\n" + "="*80)
-    print("GENERATING SUMMARY REPORT")
+    print("GENERATING COMPREHENSIVE SUMMARY REPORT")
     print("="*80)
     
     report = {
@@ -580,47 +711,71 @@ def create_summary_report(metadata_df, embeddings, correlations, temporal_df):
             'total_clips': metadata_df['clip_name'].nunique(),
             'valence_mean': float(metadata_df['valence'].mean()),
             'valence_std': float(metadata_df['valence'].std()),
+            'valence_min': float(metadata_df['valence'].min()),
+            'valence_max': float(metadata_df['valence'].max()),
             'arousal_mean': float(metadata_df['arousal'].mean()),
             'arousal_std': float(metadata_df['arousal'].std()),
+            'arousal_min': float(metadata_df['arousal'].min()),
+            'arousal_max': float(metadata_df['arousal'].max()),
         },
         'embedding_statistics': {
             'embedding_dim': embeddings.shape[1],
             'embedding_mean': float(embeddings.mean()),
             'embedding_std': float(embeddings.std()),
         },
+        'pca_statistics': {
+            'n_components': pca.n_components_,
+            'variance_explained_by_first_2': float(pca.explained_variance_ratio_[:2].sum()),
+            'variance_explained_by_first_10': float(pca.explained_variance_ratio_[:10].sum()),
+            'components_for_80_percent': int(np.argmax(np.cumsum(pca.explained_variance_ratio_) >= 0.8) + 1),
+            'components_for_90_percent': int(np.argmax(np.cumsum(pca.explained_variance_ratio_) >= 0.9) + 1),
+        },
         'correlation_analysis': {
-            'max_valence_correlation': float(max(correlations['valence_correlations'])),
-            'max_arousal_correlation': float(max(correlations['arousal_correlations'])),
-            'mean_abs_valence_correlation': float(np.mean(np.abs(correlations['valence_correlations']))),
-            'mean_abs_arousal_correlation': float(np.mean(np.abs(correlations['arousal_correlations']))),
+            'max_valence_pearson_raw': float(max([abs(x) for x in correlations['embedding_dim_correlations']['valence_pearson']])),
+            'max_arousal_pearson_raw': float(max([abs(x) for x in correlations['embedding_dim_correlations']['arousal_pearson']])),
+            'max_valence_pearson_pca': float(max([abs(x) for x in correlations['pca_correlations']['valence_pearson']])),
+            'max_arousal_pearson_pca': float(max([abs(x) for x in correlations['pca_correlations']['arousal_pearson']])),
         },
         'temporal_analysis': {
             'mean_embedding_smoothness': float(temporal_df['embedding_smoothness'].mean()),
             'mean_valence_change': float(temporal_df['valence_change'].mean()),
             'mean_arousal_change': float(temporal_df['arousal_change'].mean()),
+            'std_embedding_smoothness': float(temporal_df['embedding_smoothness'].std()),
         }
     }
     
-    with open(RESULTS_DIR / 'summary_report.json', 'w') as f:
+    with open(RESULTS_DIR / 'comprehensive_summary_report.json', 'w') as f:
         json.dump(report, f, indent=2)
     
-    # Print summary
-    print("\nDATASET STATISTICS:")
-    print(f"  Total frames: {report['dataset_statistics']['total_frames']}")
+    # Print comprehensive summary
+    print("\n" + "="*80)
+    print("DATASET STATISTICS:")
+    print(f"  Total frames: {report['dataset_statistics']['total_frames']:,}")
     print(f"  Total clips: {report['dataset_statistics']['total_clips']}")
-    print(f"  Valence: {report['dataset_statistics']['valence_mean']:.3f} ± {report['dataset_statistics']['valence_std']:.3f}")
-    print(f"  Arousal: {report['dataset_statistics']['arousal_mean']:.3f} ± {report['dataset_statistics']['arousal_std']:.3f}")
+    print(f"  Valence: μ={report['dataset_statistics']['valence_mean']:.2f}, σ={report['dataset_statistics']['valence_std']:.2f}")
+    print(f"  Valence range: [{report['dataset_statistics']['valence_min']:.2f}, {report['dataset_statistics']['valence_max']:.2f}]")
+    print(f"  Arousal: μ={report['dataset_statistics']['arousal_mean']:.2f}, σ={report['dataset_statistics']['arousal_std']:.2f}")
+    print(f"  Arousal range: [{report['dataset_statistics']['arousal_min']:.2f}, {report['dataset_statistics']['arousal_max']:.2f}]")
+    
+    print("\nPCA STATISTICS:")
+    print(f"  First 2 components explain: {report['pca_statistics']['variance_explained_by_first_2']:.2%}")
+    print(f"  First 10 components explain: {report['pca_statistics']['variance_explained_by_first_10']:.2%}")
+    print(f"  Components for 80% variance: {report['pca_statistics']['components_for_80_percent']}")
+    print(f"  Components for 90% variance: {report['pca_statistics']['components_for_90_percent']}")
     
     print("\nCORRELATION ANALYSIS:")
-    print(f"  Max valence correlation: {report['correlation_analysis']['max_valence_correlation']:.4f}")
-    print(f"  Max arousal correlation: {report['correlation_analysis']['max_arousal_correlation']:.4f}")
+    print(f"  Max valence correlation (raw): {report['correlation_analysis']['max_valence_pearson_raw']:.4f}")
+    print(f"  Max arousal correlation (raw): {report['correlation_analysis']['max_arousal_pearson_raw']:.4f}")
+    print(f"  Max valence correlation (PCA): {report['correlation_analysis']['max_valence_pearson_pca']:.4f}")
+    print(f"  Max arousal correlation (PCA): {report['correlation_analysis']['max_arousal_pearson_pca']:.4f}")
     
     print("\nTEMPORAL ANALYSIS:")
-    print(f"  Mean smoothness: {report['temporal_analysis']['mean_embedding_smoothness']:.4f}")
+    print(f"  Mean smoothness: {report['temporal_analysis']['mean_embedding_smoothness']:.4f} ± {report['temporal_analysis']['std_embedding_smoothness']:.4f}")
     print(f"  Mean valence change: {report['temporal_analysis']['mean_valence_change']:.4f}")
     print(f"  Mean arousal change: {report['temporal_analysis']['mean_arousal_change']:.4f}")
     
-    print(f"\nSaved summary report to: {RESULTS_DIR / 'summary_report.json'}")
+    print("\n" + "="*80)
+    print(f"Saved comprehensive summary to: {RESULTS_DIR / 'comprehensive_summary_report.json'}")
 
 
 # ============================================================================
@@ -628,7 +783,7 @@ def create_summary_report(metadata_df, embeddings, correlations, temporal_df):
 # ============================================================================
 
 def main():
-    """Main execution pipeline."""
+    """Main execution pipeline - Complete analysis."""
     
     # Step 1: Load dataset
     df = load_afew_va_dataset(DATA_DIR)
@@ -656,30 +811,58 @@ def main():
     torch.cuda.empty_cache()
     
     # Step 4: Dimensionality reduction
+    print("\n" + "="*80)
+    print("PERFORMING DIMENSIONALITY REDUCTION")
+    print("="*80)
+    
     embeddings_2d_umap = apply_umap(embeddings, CONFIG)
     embeddings_2d_tsne = apply_tsne(embeddings)
+    pca_embeddings, pca = apply_pca(embeddings, CONFIG['pca_n_components'])
     
-    # Step 5: Compute analyses
-    correlations = compute_valence_arousal_correlation(embeddings, metadata_df)
+    # Step 5: Comprehensive correlation analysis
+    correlations = compute_comprehensive_correlations(
+        embeddings, pca_embeddings, embeddings_2d_umap, metadata_df
+    )
+    
+    # Step 6: Temporal analysis
     temporal_df = compute_temporal_analysis(embeddings, metadata_df)
     
-    # Step 6: Create visualizations
-    create_valence_arousal_scatter(embeddings_2d_umap, metadata_df)
+    # Step 7: Create ALL visualizations
+    print("\n" + "="*80)
+    print("CREATING ALL VISUALIZATIONS")
+    print("="*80)
+    
+    create_umap_primary_visualization(embeddings_2d_umap, metadata_df)
+    create_pca_validation_plots(pca_embeddings, pca, metadata_df)
     create_2d_va_space_plot(metadata_df)
-    create_correlation_heatmap(correlations)
     create_temporal_plots(temporal_df)
     
-    # Step 7: Generate summary report
-    create_summary_report(metadata_df, embeddings, correlations, temporal_df)
+    # Step 8: Generate comprehensive summary
+    create_summary_report(metadata_df, embeddings, pca, correlations, temporal_df)
     
     print("\n" + "="*80)
-    print("PIPELINE COMPLETED SUCCESSFULLY!")
+    print("✅ COMPLETE ANALYSIS PIPELINE FINISHED SUCCESSFULLY!")
     print("="*80)
     print(f"\nAll outputs saved to: {PROJECT_ROOT}")
-    print(f"  - Embeddings: {EMBEDDINGS_DIR}")
-    print(f"  - Visualizations: {VISUALIZATIONS_DIR}")
-    print(f"  - Results: {RESULTS_DIR}")
-    print(f"  - Checkpoints: {CHECKPOINTS_DIR}")
+    print(f"\n📁 Output Structure:")
+    print(f"  📊 Embeddings: {EMBEDDINGS_DIR}")
+    print(f"     - blip2_embeddings.h5 (HDF5 format)")
+    print(f"     - embeddings.pkl (Pickle format)")
+    print(f"     - metadata.csv")
+    print(f"\n  🎨 Visualizations: {VISUALIZATIONS_DIR}")
+    print(f"     - umap_primary_visualization.png")
+    print(f"     - pca_validation_analysis.png")
+    print(f"     - 2d_valence_arousal_space.png")
+    print(f"     - temporal_analysis.png")
+    print(f"\n  📈 Results: {RESULTS_DIR}")
+    print(f"     - umap_embeddings_2d.npy")
+    print(f"     - tsne_embeddings_2d.npy")
+    print(f"     - pca_embeddings.npy")
+    print(f"     - pca_explained_variance.npy")
+    print(f"     - comprehensive_correlations.json")
+    print(f"     - temporal_analysis.csv")
+    print(f"     - comprehensive_summary_report.json")
+    print(f"\n  💾 Checkpoints: {CHECKPOINTS_DIR}")
     print("\n" + "="*80)
 
 
