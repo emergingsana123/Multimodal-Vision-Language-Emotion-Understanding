@@ -788,27 +788,60 @@ def main():
     # Step 1: Load dataset
     df = load_afew_va_dataset(DATA_DIR)
     
-    # Step 2: Initialize BLIP-2 model
-    print("\n" + "="*80)
-    print("LOADING BLIP-2 MODEL")
-    print("="*80)
+    # Step 2: Check if embeddings already exist
+    embeddings_pkl_path = EMBEDDINGS_DIR / 'embeddings.pkl'
     
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    processor = Blip2Processor.from_pretrained(CONFIG['model_name'])
-    model = Blip2Model.from_pretrained(CONFIG['model_name'])
-    
-    if CONFIG['use_fp16'] and device == 'cuda':
-        model = model.half()
-    
-    print(f"Model loaded on: {device}")
-    
-    # Step 3: Extract embeddings
-    embeddings, metadata_df = extract_embeddings(model, processor, df, 
-                                                 CONFIG['batch_size'], device)
-    
-    # Free up GPU memory
-    del model
-    torch.cuda.empty_cache()
+    if embeddings_pkl_path.exists():
+        print("\n" + "="*80)
+        print("⚡ LOADING EXISTING EMBEDDINGS (skipping extraction)")
+        print("="*80)
+        print(f"Found existing embeddings at: {embeddings_pkl_path}")
+        
+        # Load from pickle file
+        with open(embeddings_pkl_path, 'rb') as f:
+            saved_data = pickle.load(f)
+        
+        embeddings = saved_data['embeddings']
+        
+        # Load metadata
+        if 'metadata' in saved_data:
+            if isinstance(saved_data['metadata'], pd.DataFrame):
+                metadata_df = saved_data['metadata']
+            else:
+                metadata_df = pd.DataFrame(saved_data['metadata'])
+        else:
+            metadata_df = pd.read_csv(EMBEDDINGS_DIR / 'metadata.csv')
+        
+        print(f"✅ Loaded embeddings shape: {embeddings.shape}")
+        print(f"✅ Loaded metadata: {len(metadata_df)} frames")
+        print("⏭️  Skipping BLIP-2 model loading and extraction (saving time!)...")
+        
+    else:
+        print("\n" + "="*80)
+        print("No existing embeddings found - will extract from scratch")
+        print("="*80)
+        
+        # Step 2: Initialize BLIP-2 model (only if needed)
+        print("\n" + "="*80)
+        print("LOADING BLIP-2 MODEL")
+        print("="*80)
+        
+        device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        processor = Blip2Processor.from_pretrained(CONFIG['model_name'])
+        model = Blip2Model.from_pretrained(CONFIG['model_name'])
+        
+        if CONFIG['use_fp16'] and device == 'cuda':
+            model = model.half()
+        
+        print(f"Model loaded on: {device}")
+        
+        # Step 3: Extract embeddings
+        embeddings, metadata_df = extract_embeddings(model, processor, df, 
+                                                     CONFIG['batch_size'], device)
+        
+        # Free up GPU memory
+        del model
+        torch.cuda.empty_cache()
     
     # Step 4: Dimensionality reduction
     print("\n" + "="*80)
