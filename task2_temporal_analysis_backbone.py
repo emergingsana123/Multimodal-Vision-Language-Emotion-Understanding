@@ -784,7 +784,7 @@ def main():
     
     # Save final summary
     final_checkpoint = {
-        'config': config,
+        'config': config_dict,
         'num_samples': len(samples),
         'num_valid_samples': len([s for s in samples if s['valence'] is not None]),
         'num_with_pseudo': len([s for s in samples if s.get('pseudo_emotion') is not None]),
