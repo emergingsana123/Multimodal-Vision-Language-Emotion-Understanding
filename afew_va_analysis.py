@@ -69,7 +69,14 @@ RESULTS_DIR = PROJECT_ROOT / 'results'
 
 # Create all output directories
 #for directory in [PROJECT_ROOT, EMBEDDINGS_DIR, CHECKPOINTS_DIR, VISUALIZATIONS_DIR, RESULTS_DIR]:
+<<<<<<< HEAD
 #    directory.mkdir(parents=True, exist_ok=True)
+=======
+#   directory.mkdir(parents=True, exist_ok=True)
+# for directory in [PROJECT_ROOT, EMBEDDINGS_DIR, CHECKPOINTS_DIR, VISUALIZATIONS_DIR, RESULTS_DIR]:
+#    directory.mkdir(parents=True, exist_ok=True)
+
+>>>>>>> d80814a (change)
 
 # Set random seeds for reproducibility
 RANDOM_SEED = 42
