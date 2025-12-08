@@ -658,13 +658,22 @@ def test_dataset():
     from pathlib import Path
     import sys
     
-    # Import config and checkpoint manager from phase 1
-    sys.path.insert(0, str(Path(__file__).parent))
-    from task2_temporal_emotion_learning_complete import TemporalEmotionConfig, CheckpointManager
+    # Get the root directory (where this script is located)
+    root_dir = Path(__file__).parent
     
+    # Import config and checkpoint manager from phase 1
+    # The phase 1 script should be in the same root directory
+    sys.path.insert(0, str(root_dir))
+    from task2_temporal_analysis_backbone import TemporalEmotionConfig, CheckpointManager
+    
+    # Initialize config (it already points to task2_outputs)
     config = TemporalEmotionConfig()
+    
+    # Checkpoints are in: task2_outputs/checkpoints
     checkpoint_dir = Path(config.project_root) / 'checkpoints'
     checkpoint_manager = CheckpointManager(checkpoint_dir)
+    
+    print(f"Loading checkpoints from: {checkpoint_dir}")
     
     # Load samples
     samples = checkpoint_manager.load_checkpoint('samples_final')
