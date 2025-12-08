@@ -35,7 +35,7 @@ from transformers import (
     VideoMAEModel,
     VideoMAEImageProcessor,
 )
-from peft import LoraConfig, get_peft_model, TaskType, PeftModel
+from peft import LoraConfig, get_peft_model, PeftModel
 from sklearn.metrics import silhouette_score
 from scipy.spatial.distance import cdist
 from scipy.stats import pearsonr, spearmanr
@@ -331,7 +331,8 @@ def apply_lora(backbone, config, checkpoint_manager: CheckpointManager):
         target_modules=config.lora_target_modules,
         lora_dropout=config.lora_dropout,
         bias="none",
-        task_type=TaskType.FEATURE_EXTRACTION,
+        # Don't specify task_type for vision models - causes PEFT to inject wrong kwargs
+        inference_mode=False, 
     )
     
     print(f"LoRA Configuration:")
