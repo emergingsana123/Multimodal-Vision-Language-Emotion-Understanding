@@ -655,6 +655,7 @@ def main():
     print(f"{'='*80}")
     
     from transformers import VideoMAEImageProcessor
+    from peft import LoraConfig, get_peft_model
     
     # Initialize backbone
     backbone = VideoMAEBackbone(
@@ -662,14 +663,40 @@ def main():
         freeze=config.freeze_backbone
     )
     
-    # Load LoRA weights
+    # Reapply LoRA configuration (IMPORTANT: Do this before loading weights)
+    print("Applying LoRA configuration...")
+    lora_config = LoraConfig(
+        r=config.lora_rank,
+        lora_alpha=config.lora_alpha,
+        target_modules=config.lora_target_modules,
+        lora_dropout=config.lora_dropout,
+        bias="none",
+        inference_mode=False,
+    )
+    
+    # Apply LoRA to the model
+    lora_model = get_peft_model(backbone.model, lora_config)
+    backbone.model = lora_model
+    
+    # Now load the trained weights
     lora_path = Path(config.project_root) / 'lora_adapters' / 'backbone_with_lora.pt'
     if lora_path.exists():
         print(f"Loading LoRA weights from {lora_path}")
-        backbone.load_state_dict(torch.load(lora_path, map_location='cpu'))
+        state_dict = torch.load(lora_path, map_location='cpu')
+        backbone.load_state_dict(state_dict, strict=False)
         print("✅ LoRA weights loaded")
     else:
         print("⚠️ No LoRA weights found, starting from scratch")
+    
+    # Verify trainable parameters
+    trainable_params = sum(p.numel() for p in backbone.parameters() if p.requires_grad)
+    total_params = sum(p.numel() for p in backbone.parameters())
+    print(f"Trainable parameters: {trainable_params:,} / {total_params:,} ({100*trainable_params/total_params:.2f}%)")
+    
+    if trainable_params == 0:
+        print("❌ ERROR: No trainable parameters found!")
+        print("This usually means LoRA was not applied correctly.")
+        return
     
     backbone = backbone.to(device)
     
