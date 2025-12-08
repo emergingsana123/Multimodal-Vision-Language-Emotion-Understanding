@@ -82,8 +82,8 @@ class TemporalEmotionConfig:
     
     # Contrastive learning settings
     temperature: float = 0.07
-    num_positive_pairs: int = 1
-    num_negative_pairs: int = 4
+    num_positive_pairs: int = 2
+    num_negative_pairs: int = 8
     
     # Loss weights
     lambda_contrastive: float = 1.0
