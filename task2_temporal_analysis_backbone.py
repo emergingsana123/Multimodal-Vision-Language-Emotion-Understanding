@@ -70,7 +70,7 @@ class TemporalEmotionConfig:
     lora_target_modules: List[str] = field(default_factory=lambda: ["attention.attention.query", "attention.attention.value"])
     
     # Video/Temporal settings
-    num_frames: int = 8
+    num_frames: int = 16
     frame_sample_rate: int = 2
     video_size: int = 224
     temporal_window_size: int = 16
