@@ -38,7 +38,7 @@ from task2_temporal_analysis_backbone import (
     VideoMAEBackbone
 )
 from task2_dataset import build_temporal_dataloaders
-from task2_losses import TemporalContrastiveLoss
+from task2_loss import TemporalContrastiveLoss
 
 # For visualization
 try:
