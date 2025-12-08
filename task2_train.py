@@ -255,13 +255,27 @@ class TemporalEmotionTrainer:
                 # Get embeddings
                 anchor_embeddings = self.model.get_embeddings(anchor)
                 
-                if positive is not None:
-                    positive_embeddings = self.model.get_embeddings(positive)
+                # Process positives in chunks to save memory
+                if positive is not None and positive.shape[0] > 0:
+                    positive_embeddings = []
+                    chunk_size = min(16, positive.shape[0])  # Process 16 at a time
+                    for i in range(0, positive.shape[0], chunk_size):
+                        pos_chunk = positive[i:i+chunk_size]
+                        pos_emb = self.model.get_embeddings(pos_chunk)
+                        positive_embeddings.append(pos_emb)
+                    positive_embeddings = torch.cat(positive_embeddings, dim=0)
                 else:
                     positive_embeddings = torch.zeros_like(anchor_embeddings[:0])
                 
-                if negative is not None:
-                    negative_embeddings = self.model.get_embeddings(negative)
+                # Process negatives in chunks to save memory
+                if negative is not None and negative.shape[0] > 0:
+                    negative_embeddings = []
+                    chunk_size = min(16, negative.shape[0])  # Process 16 at a time
+                    for i in range(0, negative.shape[0], chunk_size):
+                        neg_chunk = negative[i:i+chunk_size]
+                        neg_emb = self.model.get_embeddings(neg_chunk)
+                        negative_embeddings.append(neg_emb)
+                    negative_embeddings = torch.cat(negative_embeddings, dim=0)
                 else:
                     negative_embeddings = torch.zeros_like(anchor_embeddings[:0])
                 
@@ -350,13 +364,27 @@ class TemporalEmotionTrainer:
             # Get embeddings
             anchor_embeddings = self.model.get_embeddings(anchor)
             
-            if positive is not None:
-                positive_embeddings = self.model.get_embeddings(positive)
+            # Process positives in chunks to save memory
+            if positive is not None and positive.shape[0] > 0:
+                positive_embeddings = []
+                chunk_size = min(16, positive.shape[0])
+                for i in range(0, positive.shape[0], chunk_size):
+                    pos_chunk = positive[i:i+chunk_size]
+                    pos_emb = self.model.get_embeddings(pos_chunk)
+                    positive_embeddings.append(pos_emb)
+                positive_embeddings = torch.cat(positive_embeddings, dim=0)
             else:
                 positive_embeddings = torch.zeros_like(anchor_embeddings[:0])
             
-            if negative is not None:
-                negative_embeddings = self.model.get_embeddings(negative)
+            # Process negatives in chunks to save memory
+            if negative is not None and negative.shape[0] > 0:
+                negative_embeddings = []
+                chunk_size = min(16, negative.shape[0])
+                for i in range(0, negative.shape[0], chunk_size):
+                    neg_chunk = negative[i:i+chunk_size]
+                    neg_emb = self.model.get_embeddings(neg_chunk)
+                    negative_embeddings.append(neg_emb)
+                negative_embeddings = torch.cat(negative_embeddings, dim=0)
             else:
                 negative_embeddings = torch.zeros_like(anchor_embeddings[:0])
             

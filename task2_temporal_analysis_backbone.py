@@ -76,14 +76,14 @@ class TemporalEmotionConfig:
     temporal_window_size: int = 16
     
     # Data settings
-    batch_size: int = 32
+    batch_size: int = 16
     num_workers: int = 4
     pin_memory: bool = True
     
     # Contrastive learning settings
     temperature: float = 0.07
-    num_positive_pairs: int = 2
-    num_negative_pairs: int = 8
+    num_positive_pairs: int = 1
+    num_negative_pairs: int = 4
     
     # Loss weights
     lambda_contrastive: float = 1.0
