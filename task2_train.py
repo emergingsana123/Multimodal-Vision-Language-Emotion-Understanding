@@ -683,47 +683,27 @@ def main():
     print(f"{'='*80}")
     
     from transformers import VideoMAEImageProcessor
-    from peft import LoraConfig, get_peft_model
     
-    # Initialize backbone
+    print("⚠️ Note: LoRA has gradient flow issues with VideoMAE")
+    print("   Training full model instead (86M params)")
+    print("   This works well with batch_size=2-4 + gradient accumulation")
+    
+    # Initialize backbone WITHOUT LoRA
     backbone = VideoMAEBackbone(
         model_name=config.backbone_model,
-        freeze=config.freeze_backbone
+        freeze=False  # Don't freeze - train full model
     )
     
-    # Reapply LoRA configuration (IMPORTANT: Do this before loading weights)
-    print("Applying LoRA configuration...")
-    lora_config = LoraConfig(
-        r=config.lora_rank,
-        lora_alpha=config.lora_alpha,
-        target_modules=config.lora_target_modules,
-        lora_dropout=config.lora_dropout,
-        bias="none",
-        inference_mode=False,
-    )
-    
-    # Apply LoRA to the model
-    lora_model = get_peft_model(backbone.model, lora_config)
-    backbone.model = lora_model
-    
-    # Now load the trained weights
-    lora_path = Path(config.project_root) / 'lora_adapters' / 'backbone_with_lora.pt'
-    if lora_path.exists():
-        print(f"Loading LoRA weights from {lora_path}")
-        state_dict = torch.load(lora_path, map_location='cpu')
-        backbone.load_state_dict(state_dict, strict=False)
-        print("✅ LoRA weights loaded")
-    else:
-        print("⚠️ No LoRA weights found, starting from scratch")
+    print("✅ Backbone initialized (full model trainable)")
     
     # Verify trainable parameters
     trainable_params = sum(p.numel() for p in backbone.parameters() if p.requires_grad)
     total_params = sum(p.numel() for p in backbone.parameters())
-    print(f"Trainable parameters: {trainable_params:,} / {total_params:,} ({100*trainable_params/total_params:.2f}%)")
+    print(f"   Trainable parameters: {trainable_params:,} / {total_params:,}")
+    print(f"   Trainable ratio: {100*trainable_params/total_params:.2f}%")
     
     if trainable_params == 0:
         print("❌ ERROR: No trainable parameters found!")
-        print("This usually means LoRA was not applied correctly.")
         return
     
     backbone = backbone.to(device)
