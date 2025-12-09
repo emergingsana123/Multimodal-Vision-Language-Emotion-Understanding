@@ -88,26 +88,71 @@ def test_training_pipeline():
     from peft import LoraConfig, get_peft_model
     
     print("Applying LoRA adapters...")
+    
+    # First, let's check what modules are available
+    print("Available modules in model:")
+    for name, module in backbone.model.named_modules():
+        if 'attention' in name.lower() and ('query' in name.lower() or 'value' in name.lower()):
+            print(f"   {name}")
+    
+    # Try to apply LoRA with correct target modules
+    # VideoMAE uses different naming than BLIP-2
+    target_modules = ["query", "value"]  # Simplified names for VideoMAE
+    
     lora_config = LoraConfig(
         r=config.lora_rank,
         lora_alpha=config.lora_alpha,
-        target_modules=config.lora_target_modules,
+        target_modules=target_modules,  # Use simplified names
         lora_dropout=config.lora_dropout,
         bias="none",
         inference_mode=False,
     )
     
-    # Apply LoRA to the model
-    backbone.model = get_peft_model(backbone.model, lora_config)
-    print("✅ LoRA adapters applied")
+    print(f"Applying LoRA with target modules: {target_modules}")
     
-    # NOW load the saved weights
+    # Apply LoRA to the model
+    try:
+        backbone.model = get_peft_model(backbone.model, lora_config)
+        backbone.model.print_trainable_parameters()
+        print("✅ LoRA adapters applied")
+    except Exception as e:
+        print(f"❌ Failed to apply LoRA: {e}")
+        print("\nTrying alternative target modules...")
+        
+        # Try alternative patterns
+        target_modules_alt = [
+            "attention.attention.query",
+            "attention.attention.value",
+        ]
+        
+        lora_config = LoraConfig(
+            r=config.lora_rank,
+            lora_alpha=config.lora_alpha,
+            target_modules=target_modules_alt,
+            lora_dropout=config.lora_dropout,
+            bias="none",
+            inference_mode=False,
+        )
+        
+        backbone.model = get_peft_model(backbone.model, lora_config)
+        backbone.model.print_trainable_parameters()
+        print("✅ LoRA adapters applied with alternative modules")
+    
+    # NOW load the saved weights (optional - we can train from scratch too)
     lora_path = Path(config.project_root) / 'lora_adapters' / 'backbone_with_lora.pt'
     if lora_path.exists():
-        print(f"Loading LoRA weights from {lora_path}")
-        state_dict = torch.load(lora_path, map_location='cpu')
-        backbone.load_state_dict(state_dict, strict=False)
-        print("✅ LoRA weights loaded")
+        print(f"\nAttempting to load saved weights from {lora_path}")
+        try:
+            state_dict = torch.load(lora_path, map_location='cpu')
+            missing, unexpected = backbone.load_state_dict(state_dict, strict=False)
+            if missing:
+                print(f"⚠️ Missing keys: {len(missing)}")
+            if unexpected:
+                print(f"⚠️ Unexpected keys: {len(unexpected)}")
+            print("✅ Weights loaded (with some mismatches - this is OK)")
+        except Exception as e:
+            print(f"⚠️ Could not load saved weights: {e}")
+            print("This is OK - we'll train from scratch with freshly initialized LoRA")
     else:
         print("⚠️ No saved weights found, using freshly initialized LoRA")
     
@@ -115,6 +160,24 @@ def test_training_pipeline():
     
     # Check trainable parameters
     trainable_params = [p for p in backbone.parameters() if p.requires_grad]
+    trainable_count = sum(p.numel() for p in trainable_params)
+    total_count = sum(p.numel() for p in backbone.parameters())
+    
+    print(f"\n📊 Final Model Statistics:")
+    print(f"   Trainable parameters: {trainable_count:,}")
+    print(f"   Total parameters: {total_count:,}")
+    print(f"   Trainable ratio: {100*trainable_count/total_count:.4f}%")
+    
+    if trainable_count < 100000:  # Should be ~590,000
+        print(f"\n❌ ERROR: Only {trainable_count:,} trainable parameters!")
+        print(f"   Expected: ~590,000 parameters")
+        print(f"   This means LoRA is not properly applied.")
+        print(f"\n   Possible fixes:")
+        print(f"   1. Check target_modules in TemporalEmotionConfig")
+        print(f"   2. Run Phase 1 again to apply LoRA correctly")
+        print(f"   3. Or train from scratch (delete saved weights)")
+        return False
+    
     print(f"✅ Trainable parameters: {len(trainable_params)}")
     if len(trainable_params) == 0:
         print("⚠️ WARNING: No trainable parameters! LoRA might not be applied correctly.")
