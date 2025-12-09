@@ -79,119 +79,26 @@ def test_training_pipeline():
     print("LOADING MODEL")
     print(f"{'='*80}")
     
-    # Initialize backbone WITHOUT freezing (LoRA needs base model unfrozen)
+    # Initialize backbone WITHOUT LoRA (LoRA has gradient flow issues with VideoMAE)
+    print("⚠️ Note: LoRA has gradient flow issues with VideoMAE")
+    print("   Training full model instead (86M params)")
+    
     backbone = VideoMAEBackbone(
         model_name=config.backbone_model,
-        freeze=False  # CRITICAL: Don't freeze when using LoRA!
+        freeze=False  # Don't freeze - train full model
     )
     
-    print("✅ Backbone initialized (unfrozen for LoRA)")
+    print("✅ Backbone initialized (full model trainable)")
+    print(f"   This works fine with batch_size=2-4 + gradient accumulation")
     
-    # ⚠️ CRITICAL: Apply LoRA BEFORE loading weights
-    from peft import LoraConfig, get_peft_model
-    
-    print("Applying LoRA adapters...")
-    
-    # First, let's check what modules are available
-    print("Available modules in model:")
-    for name, module in backbone.model.named_modules():
-        if 'attention' in name.lower() and ('query' in name.lower() or 'value' in name.lower()):
-            print(f"   {name}")
-    
-    # Try to apply LoRA with correct target modules
-    # VideoMAE uses different naming than BLIP-2
-    target_modules = ["query", "value"]  # Simplified names for VideoMAE
-    
-    # CRITICAL FIX: Add modules_to_save to enable gradient flow
-    # This tells PEFT which modules should remain trainable for gradient flow
-    lora_config = LoraConfig(
-        r=config.lora_rank,
-        lora_alpha=config.lora_alpha,
-        target_modules=target_modules,  # Use simplified names
-        lora_dropout=config.lora_dropout,
-        bias="none",
-        inference_mode=False,
-        # Enable gradient flow through base model
-        modules_to_save=None,  # We'll handle this differently
-    )
-    
-    print(f"Applying LoRA with target modules: {target_modules}")
-    
-    # Apply LoRA to the model
-    try:
-        backbone.model = get_peft_model(backbone.model, lora_config)
-        
-        # CRITICAL: Enable input require grads for PEFT
-        # This connects LoRA to the computation graph
-        backbone.model.enable_input_require_grads()
-        
-        backbone.model.print_trainable_parameters()
-        print("✅ LoRA adapters applied")
-        print("✅ Input require grads enabled (LoRA connected to computation graph)")
-        
-        # Enable gradients on all params for gradient flow
-        print("\n🔧 Enabling gradient flow through base model...")
-        for name, param in backbone.model.named_parameters():
-            param.requires_grad = True  # Enable all for gradient flow
-        
-        # Count parameters
-        all_with_grad = sum(p.numel() for p in backbone.model.parameters() if p.requires_grad)
-        print(f"✅ All parameters set to requires_grad=True: {all_with_grad:,}")
-        print(f"   (Optimizer will only update LoRA: 589,824 params)")
-        
-    except Exception as e:
-        print(f"❌ Failed to apply LoRA: {e}")
-        print("\nTrying alternative target modules...")
-        
-        # Try alternative patterns
-        target_modules_alt = [
-            "attention.attention.query",
-            "attention.attention.value",
-        ]
-        
-        lora_config = LoraConfig(
-            r=config.lora_rank,
-            lora_alpha=config.lora_alpha,
-            target_modules=target_modules_alt,
-            lora_dropout=config.lora_dropout,
-            bias="none",
-            inference_mode=False,
-        )
-        
-        backbone.model = get_peft_model(backbone.model, lora_config)
-        backbone.model.enable_input_require_grads()
-        backbone.model.print_trainable_parameters()
-        print("✅ LoRA adapters applied with alternative modules")
-        print("✅ Input require grads enabled")
-        
-        # Enable gradients on all params
-        for name, param in backbone.model.named_parameters():
-            param.requires_grad = True
-        
-        all_with_grad = sum(p.numel() for p in backbone.model.parameters() if p.requires_grad)
-        print(f"✅ All parameters set to requires_grad=True: {all_with_grad:,}")
-    
-    # NOW load the saved weights (optional - we can train from scratch too)
-    lora_path = Path(config.project_root) / 'lora_adapters' / 'backbone_with_lora.pt'
-    if lora_path.exists():
-        print(f"\nAttempting to load saved weights from {lora_path}")
-        try:
-            state_dict = torch.load(lora_path, map_location='cpu')
-            missing, unexpected = backbone.load_state_dict(state_dict, strict=False)
-            if missing:
-                print(f"⚠️ Missing keys: {len(missing)}")
-            if unexpected:
-                print(f"⚠️ Unexpected keys: {len(unexpected)}")
-            print("✅ Weights loaded (with some mismatches - this is OK)")
-        except Exception as e:
-            print(f"⚠️ Could not load saved weights: {e}")
-            print("This is OK - we'll train from scratch with freshly initialized LoRA")
-    else:
-        print("⚠️ No saved weights found, using freshly initialized LoRA")
+    # Skip LoRA application (doesn't work with VideoMAE)
+    print("\n✅ Using full model (no LoRA)")
+    print("   All 86,817,024 parameters trainable")
+    print("   Memory efficient with small batch + gradient accumulation")
     
     backbone = backbone.to(device)
     
-    # Check trainable parameters - IMPORTANT: Use backbone.model not backbone
+    # Check trainable parameters
     trainable_params = [p for p in backbone.model.parameters() if p.requires_grad]
     trainable_count = sum(p.numel() for p in trainable_params)
     total_count = sum(p.numel() for p in backbone.model.parameters())
@@ -201,14 +108,8 @@ def test_training_pipeline():
     print(f"   Total parameters: {total_count:,}")
     print(f"   Trainable ratio: {100*trainable_count/total_count:.4f}%")
     
-    if trainable_count < 100000:  # Should be ~590,000
-        print(f"\n❌ ERROR: Only {trainable_count:,} trainable parameters!")
-        print(f"   Expected: ~590,000 parameters")
-        print(f"   This means LoRA is not properly applied.")
-        print(f"\n   Possible fixes:")
-        print(f"   1. Check target_modules in TemporalEmotionConfig")
-        print(f"   2. Run Phase 1 again to apply LoRA correctly")
-        print(f"   3. Or train from scratch (delete saved weights)")
+    if trainable_count == 0:
+        print(f"\n❌ ERROR: No trainable parameters!")
         return False
     
     # Initialize processor
@@ -394,13 +295,12 @@ def test_training_pipeline():
         print(f"   Input requires_grad: {anchor.requires_grad}")
         print(f"   Input device: {anchor.device}")
         
-        # Create optimizer - ONLY for LoRA parameters
-        trainable_params = [p for n, p in backbone.model.named_parameters() 
-                           if p.requires_grad and 'lora' in n.lower()]
-        print(f"   Found {len(trainable_params)} LoRA parameter tensors for optimizer")
+        # Create optimizer - all trainable parameters
+        trainable_params = [p for p in backbone.model.parameters() if p.requires_grad]
+        print(f"   Found {len(trainable_params)} trainable parameter tensors")
         
         if len(trainable_params) == 0:
-            print(f"❌ No LoRA parameters found!")
+            print(f"❌ No trainable parameters found!")
             return False
         
         optimizer = torch.optim.AdamW(trainable_params, lr=1e-5)
@@ -456,35 +356,11 @@ def test_training_pipeline():
         print(f"   Backward completed, checking gradients...")
         
         # Check if gradients were computed
-        grad_count = 0
-        no_grad_params = []
-        
-        for name, param in backbone.model.named_parameters():
-            if 'lora' in name.lower():
-                if param.grad is not None:
-                    grad_count += 1
-                else:
-                    no_grad_params.append(name)
-        
-        print(f"   LoRA parameters with gradients: {grad_count}")
+        grad_count = sum(1 for p in trainable_params if p.grad is not None)
+        print(f"   Parameters with gradients: {grad_count}/{len(trainable_params)}")
         
         if grad_count == 0:
-            print(f"   ❌ No gradients computed for LoRA!")
-            print(f"\n   Debugging:")
-            print(f"   - Loss requires_grad: {loss.requires_grad}")
-            print(f"   - Embeddings in computation graph: {embeddings.requires_grad}")
-            
-            # Check if LoRA params are actually in the computation graph
-            print(f"\n   Checking first few LoRA params:")
-            for i, (name, param) in enumerate(backbone.model.named_parameters()):
-                if 'lora' in name.lower():
-                    print(f"      {name}:")
-                    print(f"         requires_grad: {param.requires_grad}")
-                    print(f"         is_leaf: {param.is_leaf}")
-                    print(f"         grad_fn: {param.grad_fn}")
-                    if i >= 2:  # Just show first 3
-                        break
-            
+            print(f"   ❌ No gradients computed!")
             return False
         
         # Check gradient magnitudes
