@@ -7,8 +7,9 @@ Uses minimal data and small batches to test quickly and efficiently
 import os
 import sys
 import torch
-from pathlib import Path
 import torch.nn.functional as F
+import numpy as np
+from pathlib import Path
 from tqdm.auto import tqdm
 
 # Import from previous phases
@@ -20,7 +21,6 @@ from task2_temporal_analysis_backbone import (
 from task2_dataset import build_temporal_dataloaders
 from task2_loss import TemporalContrastiveLoss
 from transformers import VideoMAEImageProcessor
-
 
 
 def test_training_pipeline():
@@ -362,14 +362,26 @@ def test_training_pipeline():
     print("TESTING BACKWARD PASS")
     print(f"{'='*80}")
     
-    backbone.train()  # Ensure model is in training mode
+    # CRITICAL: Set model to training mode BEFORE moving to device
+    backbone.train()
+    backbone.model.train()
+    
+    # Verify LoRA is in training mode
+    print(f"   Backbone training mode: {backbone.training}")
+    print(f"   Backbone.model training mode: {backbone.model.training}")
+    
+    # Move to device
+    backbone = backbone.to(device)
     
     try:
         # Get one sample
         anchor = batch['anchor'][:1].to(device)  # Shape: (1, 16, 3, 224, 224)
         
-        # Create optimizer with correct parameters
-        # Use model.parameters() not backbone.parameters()
+        print(f"   Input shape: {anchor.shape}")
+        print(f"   Input requires_grad: {anchor.requires_grad}")
+        print(f"   Input device: {anchor.device}")
+        
+        # Create optimizer with model parameters (not backbone)
         trainable_params = [p for p in backbone.model.parameters() if p.requires_grad]
         print(f"   Found {len(trainable_params)} trainable parameter tensors")
         
@@ -379,23 +391,43 @@ def test_training_pipeline():
         
         optimizer = torch.optim.AdamW(trainable_params, lr=1e-5)
         
-        # Forward pass - DON'T use get_embeddings, compute directly
+        # Forward pass - call model directly to ensure gradients
+        print(f"\n   Computing forward pass...")
         outputs = backbone.model(pixel_values=anchor, return_dict=True)
         embeddings = outputs.last_hidden_state[:, 0, :]  # Get [CLS] token
-        embeddings = F.normalize(embeddings, p=2, dim=-1)  # Normalize
         
-        # Check if embeddings require grad
-        print(f"   Embeddings require_grad: {embeddings.requires_grad}")
+        print(f"   Raw embeddings shape: {embeddings.shape}")
+        print(f"   Raw embeddings require_grad: {embeddings.requires_grad}")
         
         if not embeddings.requires_grad:
-            print(f"   ❌ ERROR: Embeddings don't have gradients!")
-            print(f"   This means the forward pass is not connected to LoRA parameters.")
+            print(f"\n   ❌ ERROR: Embeddings don't have gradients after forward pass!")
+            print(f"   Checking LoRA parameters...")
+            
+            # Debug: Check if any LoRA params actually require grad
+            lora_params_with_grad = 0
+            for name, param in backbone.model.named_parameters():
+                if 'lora' in name.lower() and param.requires_grad:
+                    lora_params_with_grad += 1
+                    print(f"      {name}: requires_grad={param.requires_grad}")
+                    if lora_params_with_grad >= 3:  # Just show first 3
+                        break
+            
+            if lora_params_with_grad == 0:
+                print(f"   ❌ No LoRA parameters have requires_grad=True!")
+                return False
+            
+            print(f"\n   This means the forward pass is not using LoRA parameters.")
+            print(f"   Possible issue: Model needs to be unwrapped or in correct mode.")
             return False
         
-        # Simple loss (just mean)
+        # Normalize
+        embeddings = F.normalize(embeddings, p=2, dim=-1)
+        print(f"   Normalized embeddings require_grad: {embeddings.requires_grad}")
+        
+        # Simple loss
         loss = embeddings.mean()
         
-        print(f"   Loss value: {loss.item():.4f}")
+        print(f"\n   Loss value: {loss.item():.4f}")
         print(f"   Loss requires_grad: {loss.requires_grad}")
         
         # Backward
@@ -410,11 +442,15 @@ def test_training_pipeline():
             print(f"   ❌ No gradients computed!")
             return False
         
+        # Check gradient magnitudes
+        grad_norms = [p.grad.norm().item() for p in trainable_params if p.grad is not None]
+        print(f"   Gradient norms - mean: {np.mean(grad_norms):.6f}, max: {max(grad_norms):.6f}")
+        
         optimizer.step()
         
-        print(f"✅ Backward pass successful")
+        print(f"\n✅ Backward pass successful")
         print(f"   Loss: {loss.item():.4f}")
-        print(f"   Gradients computed successfully")
+        print(f"   Gradients computed and applied successfully")
     
     except RuntimeError as e:
         if "out of memory" in str(e):
