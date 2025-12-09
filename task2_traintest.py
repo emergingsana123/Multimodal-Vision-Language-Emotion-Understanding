@@ -121,12 +121,16 @@ def test_training_pipeline():
     # Apply LoRA to the model
     try:
         backbone.model = get_peft_model(backbone.model, lora_config)
+        
+        # CRITICAL: Enable input require grads for PEFT
+        # This connects LoRA to the computation graph
+        backbone.model.enable_input_require_grads()
+        
         backbone.model.print_trainable_parameters()
         print("✅ LoRA adapters applied")
+        print("✅ Input require grads enabled (LoRA connected to computation graph)")
         
-        # CRITICAL FIX: Enable gradients on base model parameters
-        # PEFT freezes them, but we need gradient flow for LoRA to work
-        # The optimizer will only update LoRA params (we'll filter in optimizer)
+        # Enable gradients on all params for gradient flow
         print("\n🔧 Enabling gradient flow through base model...")
         for name, param in backbone.model.named_parameters():
             param.requires_grad = True  # Enable all for gradient flow
@@ -156,9 +160,17 @@ def test_training_pipeline():
         )
         
         backbone.model = get_peft_model(backbone.model, lora_config)
+        backbone.model.enable_input_require_grads()
         backbone.model.print_trainable_parameters()
         print("✅ LoRA adapters applied with alternative modules")
-        print("⚠️ Note: Base parameters unfrozen to enable gradient flow through LoRA")
+        print("✅ Input require grads enabled")
+        
+        # Enable gradients on all params
+        for name, param in backbone.model.named_parameters():
+            param.requires_grad = True
+        
+        all_with_grad = sum(p.numel() for p in backbone.model.parameters() if p.requires_grad)
+        print(f"✅ All parameters set to requires_grad=True: {all_with_grad:,}")
     
     # NOW load the saved weights (optional - we can train from scratch too)
     lora_path = Path(config.project_root) / 'lora_adapters' / 'backbone_with_lora.pt'
