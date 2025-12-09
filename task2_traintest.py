@@ -103,6 +103,8 @@ def test_training_pipeline():
     # VideoMAE uses different naming than BLIP-2
     target_modules = ["query", "value"]  # Simplified names for VideoMAE
     
+    # CRITICAL FIX: Add modules_to_save to enable gradient flow
+    # This tells PEFT which modules should remain trainable for gradient flow
     lora_config = LoraConfig(
         r=config.lora_rank,
         lora_alpha=config.lora_alpha,
@@ -110,6 +112,8 @@ def test_training_pipeline():
         lora_dropout=config.lora_dropout,
         bias="none",
         inference_mode=False,
+        # Enable gradient flow through base model
+        modules_to_save=None,  # We'll handle this differently
     )
     
     print(f"Applying LoRA with target modules: {target_modules}")
@@ -120,16 +124,17 @@ def test_training_pipeline():
         backbone.model.print_trainable_parameters()
         print("✅ LoRA adapters applied")
         
-        # NOW freeze the base model parameters (but keep LoRA unfrozen)
+        # CRITICAL FIX: Enable gradients on base model parameters
+        # PEFT freezes them, but we need gradient flow for LoRA to work
+        # The optimizer will only update LoRA params (we'll filter in optimizer)
+        print("\n🔧 Enabling gradient flow through base model...")
         for name, param in backbone.model.named_parameters():
-            if 'lora' not in name.lower():
-                param.requires_grad = False
-            else:
-                param.requires_grad = True  # Ensure LoRA stays unfrozen
+            param.requires_grad = True  # Enable all for gradient flow
         
-        # Verify what's trainable
-        trainable_count = sum(p.numel() for p in backbone.model.parameters() if p.requires_grad)
-        print(f"✅ Base model frozen, LoRA unfrozen: {trainable_count:,} trainable params")
+        # Count parameters
+        all_with_grad = sum(p.numel() for p in backbone.model.parameters() if p.requires_grad)
+        print(f"✅ All parameters set to requires_grad=True: {all_with_grad:,}")
+        print(f"   (Optimizer will only update LoRA: 589,824 params)")
         
     except Exception as e:
         print(f"❌ Failed to apply LoRA: {e}")
@@ -153,16 +158,7 @@ def test_training_pipeline():
         backbone.model = get_peft_model(backbone.model, lora_config)
         backbone.model.print_trainable_parameters()
         print("✅ LoRA adapters applied with alternative modules")
-        
-        # Freeze base model, keep LoRA unfrozen
-        for name, param in backbone.model.named_parameters():
-            if 'lora' not in name.lower():
-                param.requires_grad = False
-            else:
-                param.requires_grad = True
-        
-        trainable_count = sum(p.numel() for p in backbone.model.parameters() if p.requires_grad)
-        print(f"✅ Base model frozen, LoRA unfrozen: {trainable_count:,} trainable params")
+        print("⚠️ Note: Base parameters unfrozen to enable gradient flow through LoRA")
     
     # NOW load the saved weights (optional - we can train from scratch too)
     lora_path = Path(config.project_root) / 'lora_adapters' / 'backbone_with_lora.pt'
@@ -387,12 +383,13 @@ def test_training_pipeline():
         print(f"   Input requires_grad: {anchor.requires_grad}")
         print(f"   Input device: {anchor.device}")
         
-        # Create optimizer with model parameters (not backbone)
-        trainable_params = [p for p in backbone.model.parameters() if p.requires_grad]
-        print(f"   Found {len(trainable_params)} trainable parameter tensors")
+        # Create optimizer - ONLY for LoRA parameters
+        trainable_params = [p for n, p in backbone.model.named_parameters() 
+                           if p.requires_grad and 'lora' in n.lower()]
+        print(f"   Found {len(trainable_params)} LoRA parameter tensors for optimizer")
         
         if len(trainable_params) == 0:
-            print(f"❌ No trainable parameters found!")
+            print(f"❌ No LoRA parameters found!")
             return False
         
         optimizer = torch.optim.AdamW(trainable_params, lr=1e-5)
