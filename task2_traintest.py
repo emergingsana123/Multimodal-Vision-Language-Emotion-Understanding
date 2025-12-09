@@ -23,7 +23,6 @@ from transformers import VideoMAEImageProcessor
 
 
 
-
 def test_training_pipeline():
     """Test the training pipeline with minimal resources"""
     
@@ -118,6 +117,16 @@ def test_training_pipeline():
         backbone.model = get_peft_model(backbone.model, lora_config)
         backbone.model.print_trainable_parameters()
         print("✅ LoRA adapters applied")
+        
+        # CRITICAL: Explicitly unfreeze LoRA parameters
+        # (They might have been frozen by freeze_backbone earlier)
+        lora_param_count = 0
+        for name, param in backbone.model.named_parameters():
+            if 'lora' in name.lower():
+                param.requires_grad = True
+                lora_param_count += 1
+        print(f"✅ Unfroze {lora_param_count} LoRA parameter tensors")
+        
     except Exception as e:
         print(f"❌ Failed to apply LoRA: {e}")
         print("\nTrying alternative target modules...")
@@ -140,6 +149,14 @@ def test_training_pipeline():
         backbone.model = get_peft_model(backbone.model, lora_config)
         backbone.model.print_trainable_parameters()
         print("✅ LoRA adapters applied with alternative modules")
+        
+        # Unfreeze LoRA parameters
+        lora_param_count = 0
+        for name, param in backbone.model.named_parameters():
+            if 'lora' in name.lower():
+                param.requires_grad = True
+                lora_param_count += 1
+        print(f"✅ Unfroze {lora_param_count} LoRA parameter tensors")
     
     # NOW load the saved weights (optional - we can train from scratch too)
     lora_path = Path(config.project_root) / 'lora_adapters' / 'backbone_with_lora.pt'
