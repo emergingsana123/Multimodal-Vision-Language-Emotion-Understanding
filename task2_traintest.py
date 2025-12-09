@@ -84,13 +84,32 @@ def test_training_pipeline():
         freeze=config.freeze_backbone
     )
     
-    # Load LoRA weights if available
+    # ⚠️ CRITICAL: Apply LoRA BEFORE loading weights
+    from peft import LoraConfig, get_peft_model
+    
+    print("Applying LoRA adapters...")
+    lora_config = LoraConfig(
+        r=config.lora_rank,
+        lora_alpha=config.lora_alpha,
+        target_modules=config.lora_target_modules,
+        lora_dropout=config.lora_dropout,
+        bias="none",
+        inference_mode=False,
+    )
+    
+    # Apply LoRA to the model
+    backbone.model = get_peft_model(backbone.model, lora_config)
+    print("✅ LoRA adapters applied")
+    
+    # NOW load the saved weights
     lora_path = Path(config.project_root) / 'lora_adapters' / 'backbone_with_lora.pt'
     if lora_path.exists():
         print(f"Loading LoRA weights from {lora_path}")
         state_dict = torch.load(lora_path, map_location='cpu')
-        backbone.load_state_dict(state_dict)
+        backbone.load_state_dict(state_dict, strict=False)
         print("✅ LoRA weights loaded")
+    else:
+        print("⚠️ No saved weights found, using freshly initialized LoRA")
     
     backbone = backbone.to(device)
     
