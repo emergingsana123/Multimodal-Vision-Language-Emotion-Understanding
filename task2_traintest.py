@@ -426,23 +426,54 @@ def test_training_pipeline():
         # Normalize
         embeddings = F.normalize(embeddings, p=2, dim=-1)
         print(f"   Normalized embeddings require_grad: {embeddings.requires_grad}")
+        print(f"   Embeddings grad_fn: {embeddings.grad_fn}")
         
         # Simple loss
         loss = embeddings.mean()
         
         print(f"\n   Loss value: {loss.item():.4f}")
         print(f"   Loss requires_grad: {loss.requires_grad}")
+        print(f"   Loss grad_fn: {loss.grad_fn}")
+        print(f"   Loss is_leaf: {loss.is_leaf}")
         
         # Backward
         optimizer.zero_grad()
+        
+        print(f"\n   Calling backward...")
         loss.backward()
         
+        print(f"   Backward completed, checking gradients...")
+        
         # Check if gradients were computed
-        grad_count = sum(1 for p in trainable_params if p.grad is not None)
-        print(f"   Parameters with gradients: {grad_count}/{len(trainable_params)}")
+        grad_count = 0
+        no_grad_params = []
+        
+        for name, param in backbone.model.named_parameters():
+            if 'lora' in name.lower():
+                if param.grad is not None:
+                    grad_count += 1
+                else:
+                    no_grad_params.append(name)
+        
+        print(f"   LoRA parameters with gradients: {grad_count}")
         
         if grad_count == 0:
-            print(f"   ❌ No gradients computed!")
+            print(f"   ❌ No gradients computed for LoRA!")
+            print(f"\n   Debugging:")
+            print(f"   - Loss requires_grad: {loss.requires_grad}")
+            print(f"   - Embeddings in computation graph: {embeddings.requires_grad}")
+            
+            # Check if LoRA params are actually in the computation graph
+            print(f"\n   Checking first few LoRA params:")
+            for i, (name, param) in enumerate(backbone.model.named_parameters()):
+                if 'lora' in name.lower():
+                    print(f"      {name}:")
+                    print(f"         requires_grad: {param.requires_grad}")
+                    print(f"         is_leaf: {param.is_leaf}")
+                    print(f"         grad_fn: {param.grad_fn}")
+                    if i >= 2:  # Just show first 3
+                        break
+            
             return False
         
         # Check gradient magnitudes
