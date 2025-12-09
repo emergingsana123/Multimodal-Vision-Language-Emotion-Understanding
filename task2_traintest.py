@@ -80,11 +80,13 @@ def test_training_pipeline():
     print("LOADING MODEL")
     print(f"{'='*80}")
     
-    # Initialize backbone
+    # Initialize backbone WITHOUT freezing (LoRA needs base model unfrozen)
     backbone = VideoMAEBackbone(
         model_name=config.backbone_model,
-        freeze=config.freeze_backbone
+        freeze=False  # CRITICAL: Don't freeze when using LoRA!
     )
+    
+    print("✅ Backbone initialized (unfrozen for LoRA)")
     
     # ⚠️ CRITICAL: Apply LoRA BEFORE loading weights
     from peft import LoraConfig, get_peft_model
@@ -118,14 +120,16 @@ def test_training_pipeline():
         backbone.model.print_trainable_parameters()
         print("✅ LoRA adapters applied")
         
-        # CRITICAL: Explicitly unfreeze LoRA parameters
-        # (They might have been frozen by freeze_backbone earlier)
-        lora_param_count = 0
+        # NOW freeze the base model parameters (but keep LoRA unfrozen)
         for name, param in backbone.model.named_parameters():
-            if 'lora' in name.lower():
-                param.requires_grad = True
-                lora_param_count += 1
-        print(f"✅ Unfroze {lora_param_count} LoRA parameter tensors")
+            if 'lora' not in name.lower():
+                param.requires_grad = False
+            else:
+                param.requires_grad = True  # Ensure LoRA stays unfrozen
+        
+        # Verify what's trainable
+        trainable_count = sum(p.numel() for p in backbone.model.parameters() if p.requires_grad)
+        print(f"✅ Base model frozen, LoRA unfrozen: {trainable_count:,} trainable params")
         
     except Exception as e:
         print(f"❌ Failed to apply LoRA: {e}")
@@ -150,13 +154,15 @@ def test_training_pipeline():
         backbone.model.print_trainable_parameters()
         print("✅ LoRA adapters applied with alternative modules")
         
-        # Unfreeze LoRA parameters
-        lora_param_count = 0
+        # Freeze base model, keep LoRA unfrozen
         for name, param in backbone.model.named_parameters():
-            if 'lora' in name.lower():
+            if 'lora' not in name.lower():
+                param.requires_grad = False
+            else:
                 param.requires_grad = True
-                lora_param_count += 1
-        print(f"✅ Unfroze {lora_param_count} LoRA parameter tensors")
+        
+        trainable_count = sum(p.numel() for p in backbone.model.parameters() if p.requires_grad)
+        print(f"✅ Base model frozen, LoRA unfrozen: {trainable_count:,} trainable params")
     
     # NOW load the saved weights (optional - we can train from scratch too)
     lora_path = Path(config.project_root) / 'lora_adapters' / 'backbone_with_lora.pt'
