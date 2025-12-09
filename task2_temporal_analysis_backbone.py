@@ -76,9 +76,9 @@ class TemporalEmotionConfig:
     temporal_window_size: int = 16
     
     # Data settings
-    batch_size: int = 16
-    num_workers: int = 4
-    pin_memory: bool = True
+    batch_size: int = 4
+    num_workers: int = 0
+    pin_memory: bool = False
     
     # Contrastive learning settings
     temperature: float = 0.07
@@ -103,7 +103,7 @@ class TemporalEmotionConfig:
     learning_rate: float = 5e-5
     weight_decay: float = 0.01
     warmup_steps: int = 500
-    gradient_accumulation_steps: int = 1
+    gradient_accumulation_steps: int = 8
     max_grad_norm: float = 1.0
     
     # Validation and checkpointing
