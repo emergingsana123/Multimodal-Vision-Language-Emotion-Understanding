@@ -22,6 +22,7 @@ from transformers import VideoMAEImageProcessor
 
 
 
+
 def test_training_pipeline():
     """Test the training pipeline with minimal resources"""
     
@@ -360,24 +361,18 @@ def test_training_pipeline():
         
         optimizer = torch.optim.AdamW(trainable_params, lr=1e-5)
         
-        # Forward pass - ensure gradients are enabled
-        embeddings = backbone.get_embeddings(anchor)
+        # Forward pass - DON'T use get_embeddings, compute directly
+        outputs = backbone.model(pixel_values=anchor, return_dict=True)
+        embeddings = outputs.last_hidden_state[:, 0, :]  # Get [CLS] token
+        embeddings = F.normalize(embeddings, p=2, dim=-1)  # Normalize
         
         # Check if embeddings require grad
         print(f"   Embeddings require_grad: {embeddings.requires_grad}")
         
         if not embeddings.requires_grad:
-            print(f"   ⚠️ Embeddings don't require grad - checking model state...")
-            print(f"   Model training mode: {backbone.training}")
-            print(f"   Backbone model training mode: {backbone.model.training}")
-            
-            # Force training mode
-            backbone.train()
-            backbone.model.train()
-            
-            # Try again
-            embeddings = backbone.get_embeddings(anchor)
-            print(f"   After forcing train mode, requires_grad: {embeddings.requires_grad}")
+            print(f"   ❌ ERROR: Embeddings don't have gradients!")
+            print(f"   This means the forward pass is not connected to LoRA parameters.")
+            return False
         
         # Simple loss (just mean)
         loss = embeddings.mean()
