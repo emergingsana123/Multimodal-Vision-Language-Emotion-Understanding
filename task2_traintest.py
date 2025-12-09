@@ -22,7 +22,6 @@ from task2_dataset import build_temporal_dataloaders
 from task2_loss import TemporalContrastiveLoss
 from transformers import VideoMAEImageProcessor
 
-
 def test_training_pipeline():
     """Test the training pipeline with minimal resources"""
     
