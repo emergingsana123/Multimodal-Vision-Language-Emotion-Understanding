@@ -21,6 +21,7 @@ from task2_loss import TemporalContrastiveLoss
 from transformers import VideoMAEImageProcessor
 
 
+
 def test_training_pipeline():
     """Test the training pipeline with minimal resources"""
     
@@ -158,10 +159,10 @@ def test_training_pipeline():
     
     backbone = backbone.to(device)
     
-    # Check trainable parameters
-    trainable_params = [p for p in backbone.parameters() if p.requires_grad]
+    # Check trainable parameters - IMPORTANT: Use backbone.model not backbone
+    trainable_params = [p for p in backbone.model.parameters() if p.requires_grad]
     trainable_count = sum(p.numel() for p in trainable_params)
-    total_count = sum(p.numel() for p in backbone.parameters())
+    total_count = sum(p.numel() for p in backbone.model.parameters())
     
     print(f"\n📊 Final Model Statistics:")
     print(f"   Trainable parameters: {trainable_count:,}")
@@ -176,11 +177,6 @@ def test_training_pipeline():
         print(f"   1. Check target_modules in TemporalEmotionConfig")
         print(f"   2. Run Phase 1 again to apply LoRA correctly")
         print(f"   3. Or train from scratch (delete saved weights)")
-        return False
-    
-    print(f"✅ Trainable parameters: {len(trainable_params)}")
-    if len(trainable_params) == 0:
-        print("⚠️ WARNING: No trainable parameters! LoRA might not be applied correctly.")
         return False
     
     # Initialize processor
@@ -347,23 +343,60 @@ def test_training_pipeline():
     print("TESTING BACKWARD PASS")
     print(f"{'='*80}")
     
-    backbone.train()
+    backbone.train()  # Ensure model is in training mode
     
     try:
-        # Create optimizer
-        trainable_params = [p for p in backbone.parameters() if p.requires_grad]
+        # Get one sample
+        anchor = batch['anchor'][:1].to(device)  # Shape: (1, 16, 3, 224, 224)
+        
+        # Create optimizer with correct parameters
+        # Use model.parameters() not backbone.parameters()
+        trainable_params = [p for p in backbone.model.parameters() if p.requires_grad]
+        print(f"   Found {len(trainable_params)} trainable parameter tensors")
+        
+        if len(trainable_params) == 0:
+            print(f"❌ No trainable parameters found!")
+            return False
+        
         optimizer = torch.optim.AdamW(trainable_params, lr=1e-5)
         
-        # Forward pass
-        anchor = batch['anchor'][:1].to(device)  # Only 1 sample
+        # Forward pass - ensure gradients are enabled
         embeddings = backbone.get_embeddings(anchor)
         
-        # Dummy loss
+        # Check if embeddings require grad
+        print(f"   Embeddings require_grad: {embeddings.requires_grad}")
+        
+        if not embeddings.requires_grad:
+            print(f"   ⚠️ Embeddings don't require grad - checking model state...")
+            print(f"   Model training mode: {backbone.training}")
+            print(f"   Backbone model training mode: {backbone.model.training}")
+            
+            # Force training mode
+            backbone.train()
+            backbone.model.train()
+            
+            # Try again
+            embeddings = backbone.get_embeddings(anchor)
+            print(f"   After forcing train mode, requires_grad: {embeddings.requires_grad}")
+        
+        # Simple loss (just mean)
         loss = embeddings.mean()
+        
+        print(f"   Loss value: {loss.item():.4f}")
+        print(f"   Loss requires_grad: {loss.requires_grad}")
         
         # Backward
         optimizer.zero_grad()
         loss.backward()
+        
+        # Check if gradients were computed
+        grad_count = sum(1 for p in trainable_params if p.grad is not None)
+        print(f"   Parameters with gradients: {grad_count}/{len(trainable_params)}")
+        
+        if grad_count == 0:
+            print(f"   ❌ No gradients computed!")
+            return False
+        
         optimizer.step()
         
         print(f"✅ Backward pass successful")
