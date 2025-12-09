@@ -252,28 +252,28 @@ class TemporalEmotionTrainer:
             
             # Forward pass with mixed precision
             with autocast(enabled=self.config.use_mixed_precision):
-                # Get embeddings
-                anchor_embeddings = self.model.get_embeddings(anchor)
+                # Get embeddings ONE AT A TIME (most memory efficient)
+                anchor_emb_list = []
+                for i in range(anchor.shape[0]):
+                    emb = self.model.get_embeddings(anchor[i:i+1])
+                    anchor_emb_list.append(emb)
+                anchor_embeddings = torch.cat(anchor_emb_list, dim=0)
                 
-                # Process positives in chunks to save memory
+                # Process positives one at a time
                 if positive is not None and positive.shape[0] > 0:
                     positive_embeddings = []
-                    chunk_size = min(16, positive.shape[0])  # Process 16 at a time
-                    for i in range(0, positive.shape[0], chunk_size):
-                        pos_chunk = positive[i:i+chunk_size]
-                        pos_emb = self.model.get_embeddings(pos_chunk)
+                    for i in range(positive.shape[0]):
+                        pos_emb = self.model.get_embeddings(positive[i:i+1])
                         positive_embeddings.append(pos_emb)
                     positive_embeddings = torch.cat(positive_embeddings, dim=0)
                 else:
                     positive_embeddings = torch.zeros_like(anchor_embeddings[:0])
                 
-                # Process negatives in chunks to save memory
+                # Process negatives one at a time
                 if negative is not None and negative.shape[0] > 0:
                     negative_embeddings = []
-                    chunk_size = min(16, negative.shape[0])  # Process 16 at a time
-                    for i in range(0, negative.shape[0], chunk_size):
-                        neg_chunk = negative[i:i+chunk_size]
-                        neg_emb = self.model.get_embeddings(neg_chunk)
+                    for i in range(negative.shape[0]):
+                        neg_emb = self.model.get_embeddings(negative[i:i+1])
                         negative_embeddings.append(neg_emb)
                     negative_embeddings = torch.cat(negative_embeddings, dim=0)
                 else:
@@ -707,6 +707,16 @@ def main():
         return
     
     backbone = backbone.to(device)
+    
+    # Enable gradient checkpointing to save memory
+    if hasattr(backbone.model, 'gradient_checkpointing_enable'):
+        backbone.model.gradient_checkpointing_enable()
+        print("✅ Gradient checkpointing enabled (saves ~30% memory)")
+    
+    # Clear GPU cache
+    torch.cuda.empty_cache()
+    import gc
+    gc.collect()
     
     # Initialize processor
     processor = VideoMAEImageProcessor.from_pretrained(config.backbone_model)
