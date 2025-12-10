@@ -16,7 +16,7 @@ from config import get_config
 # ============================================================================
 # POSITIONAL ENCODING
 # ============================================================================
-
+   
 class PositionalEncoding(nn.Module):
     """Sinusoidal positional encoding for temporal sequences"""
     
@@ -28,24 +28,20 @@ class PositionalEncoding(nn.Module):
         position = torch.arange(max_len).unsqueeze(1)
         div_term = torch.exp(torch.arange(0, d_model, 2) * (-math.log(10000.0) / d_model))
         
-        pe = torch.zeros(max_len, 1, d_model)
-        pe[:, 0, 0::2] = torch.sin(position * div_term)
-        pe[:, 0, 1::2] = torch.cos(position * div_term)
+        pe = torch.zeros(1, max_len, d_model)  # (1, max_len, d_model)
+        pe[0, :, 0::2] = torch.sin(position * div_term)
+        pe[0, :, 1::2] = torch.cos(position * div_term)
         
         self.register_buffer('pe', pe)
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Args:
-            x: Tensor of shape (seq_len, batch, d_model) or (batch, seq_len, d_model)
+            x: Tensor of shape (batch, seq_len, d_model)
         """
-        if x.dim() == 3 and x.size(1) > x.size(0):
-            # (batch, seq_len, d_model) format
-            x = x + self.pe[:x.size(1)].transpose(0, 1)
-        else:
-            # (seq_len, batch, d_model) format
-            x = x + self.pe[:x.size(0)]
-        
+        # x: (batch, seq_len, d_model)
+        # pe: (1, max_len, d_model)
+        x = x + self.pe[:, :x.size(1), :]
         return self.dropout(x)
 
 
