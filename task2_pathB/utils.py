@@ -292,3 +292,110 @@ def set_seed(seed: int):
 
 
 # ===========================================================================
+# ============================================================================
+# PROGRESS TRACKING
+# ============================================================================
+
+class ProgressTracker:
+    """Track training progress with ETA estimation"""
+    
+    def __init__(self, total_epochs: int, steps_per_epoch: int):
+        self.total_epochs = total_epochs
+        self.steps_per_epoch = steps_per_epoch
+        self.start_time = None
+        self.epoch_start_time = None
+        self.current_epoch = 0
+    
+    def start(self):
+        """Start tracking"""
+        self.start_time = datetime.now()
+    
+    def start_epoch(self, epoch: int):
+        """Start tracking epoch"""
+        self.current_epoch = epoch
+        self.epoch_start_time = datetime.now()
+    
+    def get_epoch_time(self) -> float:
+        """Get time elapsed for current epoch in seconds"""
+        if self.epoch_start_time is None:
+            return 0
+        return (datetime.now() - self.epoch_start_time).total_seconds()
+    
+    def get_total_time(self) -> float:
+        """Get total time elapsed in seconds"""
+        if self.start_time is None:
+            return 0
+        return (datetime.now() - self.start_time).total_seconds()
+    
+    def get_eta(self, current_epoch: int) -> str:
+        """Estimate time remaining"""
+        if self.start_time is None:
+            return "Unknown"
+        
+        elapsed = self.get_total_time()
+        epochs_done = current_epoch + 1
+        epochs_remaining = self.total_epochs - epochs_done
+        
+        if epochs_done == 0:
+            return "Unknown"
+        
+        time_per_epoch = elapsed / epochs_done
+        eta_seconds = time_per_epoch * epochs_remaining
+        
+        # Format as hours:minutes
+        hours = int(eta_seconds // 3600)
+        minutes = int((eta_seconds % 3600) // 60)
+        
+        return f"{hours}h {minutes}m"
+    
+    def format_time(self, seconds: float) -> str:
+        """Format seconds to readable string"""
+        hours = int(seconds // 3600)
+        minutes = int((seconds % 3600) // 60)
+        secs = int(seconds % 60)
+        return f"{hours}h {minutes}m {secs}s"
+
+
+# ============================================================================
+# TEST UTILITIES
+# ============================================================================
+
+if __name__ == "__main__":
+    print("=" * 80)
+    print("TESTING UTILITIES")
+    print("=" * 80)
+    
+    # Test logging
+    print("\n1. Testing logging...")
+    logger = setup_logging('./outputs/logs', 'test')
+    logger.info("This is a test log message")
+    print("✓ Logging works")
+    
+    # Test checkpoint manager
+    print("\n2. Testing checkpoint manager...")
+    ckpt_mgr = CheckpointManager('./outputs/checkpoints')
+    test_data = {'epoch': 10, 'loss': 0.5, 'model_state': {}}
+    ckpt_mgr.save('test', test_data)
+    loaded_data = ckpt_mgr.load('test')
+    assert loaded_data['epoch'] == 10
+    print("✓ Checkpoint manager works")
+    
+    # Test GPU utilities
+    print("\n3. Testing GPU utilities...")
+    print_gpu_memory("Initial ")
+    set_seed(42)
+    print("✓ GPU utilities work")
+    
+    # Test progress tracker
+    print("\n4. Testing progress tracker...")
+    tracker = ProgressTracker(total_epochs=10, steps_per_epoch=100)
+    tracker.start()
+    tracker.start_epoch(0)
+    import time
+    time.sleep(0.1)
+    print(f"  Epoch time: {tracker.format_time(tracker.get_epoch_time())}")
+    print("✓ Progress tracker works")
+    
+    print("\n" + "=" * 80)
+    print("✅ ALL UTILITY TESTS PASSED")
+    print("=" * 80)
