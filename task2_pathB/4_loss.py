@@ -183,14 +183,14 @@ if __name__ == "__main__":
     print("TESTING INFONCE LOSS")
     print("="*80)
     
-    # Create dummy embeddings
+    # Create dummy embeddings WITH gradient tracking
     batch_size = 8
     embed_dim = 128
     num_pos_per_anchor = 2
     
-    # Random normalized embeddings
-    anchors = F.normalize(torch.randn(batch_size, embed_dim), p=2, dim=1)
-    positives = F.normalize(torch.randn(batch_size * num_pos_per_anchor, embed_dim), p=2, dim=1)
+    # Random normalized embeddings - IMPORTANT: requires_grad=True
+    anchors = F.normalize(torch.randn(batch_size, embed_dim, requires_grad=True), p=2, dim=1)
+    positives = F.normalize(torch.randn(batch_size * num_pos_per_anchor, embed_dim, requires_grad=True), p=2, dim=1)
     
     print(f"\nTest setup:")
     print(f"  Batch size: {batch_size}")
@@ -214,31 +214,48 @@ if __name__ == "__main__":
     
     # Test with perfect alignment (positives = anchors)
     print("\n2. Testing with perfect alignment...")
-    perfect_positives = anchors.repeat(num_pos_per_anchor, 1)
+    perfect_positives = anchors.detach().repeat(num_pos_per_anchor, 1)
+    perfect_positives.requires_grad = True
     loss_perfect, metrics_perfect = loss_fn(anchors, perfect_positives)
     
     print(f"   Loss (should be low): {loss_perfect.item():.4f}")
     print(f"   Pos similarity: {metrics_perfect['mean_pos_sim']:.4f}")
     print(f"   Neg similarity: {metrics_perfect['mean_neg_sim']:.4f}")
     
-    # Test accuracy
+    # Test accuracy (no gradients needed)
     print("\n3. Testing contrastive accuracy...")
-    accuracy = compute_contrastive_accuracy(anchors, positives)
-    print(f"   Accuracy (random embeddings): {accuracy:.2%}")
-    
-    accuracy_perfect = compute_contrastive_accuracy(anchors, perfect_positives)
-    print(f"   Accuracy (perfect alignment): {accuracy_perfect:.2%}")
+    with torch.no_grad():
+        anchors_nograd = F.normalize(torch.randn(batch_size, embed_dim), p=2, dim=1)
+        positives_nograd = F.normalize(torch.randn(batch_size * num_pos_per_anchor, embed_dim), p=2, dim=1)
+        accuracy = compute_contrastive_accuracy(anchors_nograd, positives_nograd)
+        print(f"   Accuracy (random embeddings): {accuracy:.2%}")
+        
+        perfect_positives_nograd = anchors_nograd.repeat(num_pos_per_anchor, 1)
+        accuracy_perfect = compute_contrastive_accuracy(anchors_nograd, perfect_positives_nograd)
+        print(f"   Accuracy (perfect alignment): {accuracy_perfect:.2%}")
     
     # Test backward pass
     print("\n4. Testing backward pass...")
-    loss.backward()
+    # Create fresh embeddings for backward test
+    test_anchors = F.normalize(torch.randn(batch_size, embed_dim, requires_grad=True), p=2, dim=1)
+    test_positives = F.normalize(torch.randn(batch_size * num_pos_per_anchor, embed_dim, requires_grad=True), p=2, dim=1)
+    
+    test_loss, _ = loss_fn(test_anchors, test_positives)
+    test_loss.backward()
+    
+    # Check gradients exist
+    assert test_anchors.grad is not None, "Anchors should have gradients"
+    assert test_positives.grad is not None, "Positives should have gradients"
     print(f"   ✅ Gradients computed successfully!")
+    print(f"   Anchor grad norm: {test_anchors.grad.norm().item():.4f}")
+    print(f"   Positive grad norm: {test_positives.grad.norm().item():.4f}")
     
     # Test different temperatures
     print("\n5. Testing different temperatures...")
     for temp in [0.05, 0.07, 0.1, 0.5]:
         loss_fn_temp = InfoNCELoss(temperature=temp)
-        loss_temp, _ = loss_fn_temp(anchors, positives)
+        with torch.no_grad():
+            loss_temp, _ = loss_fn_temp(anchors_nograd, positives_nograd)
         print(f"   Temperature {temp:.2f}: loss = {loss_temp.item():.4f}")
     
     print("\n" + "="*80)
