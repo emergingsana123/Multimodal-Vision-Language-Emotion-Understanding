@@ -25,6 +25,7 @@ class InfoNCELoss(nn.Module):
         Returns RAW cosine similarities in metrics (range [-1, 1])
         """
         batch_size = anchor_embeddings.shape[0]
+        device = anchor_embeddings.device
         
         # Normalize
         anchor_embeddings = F.normalize(anchor_embeddings, p=2, dim=1)
@@ -39,31 +40,32 @@ class InfoNCELoss(nn.Module):
         # Compute anchor-anchor similarities (RAW, for negatives)
         anchor_anchor_sim = torch.mm(anchor_embeddings, anchor_embeddings.T)
         
+        # Create mask to exclude self-similarities
+        mask = torch.eye(batch_size, dtype=torch.bool, device=device)
+        
         # Loss computation
         losses = []
         pos_sims_raw = []
         neg_sims_raw = []
         
         for i in range(batch_size):
-            anchor = anchor_embeddings[i:i+1]
+            anchor = anchor_embeddings[i:i+1]  # (1, embed_dim)
             
-            # Positive similarities (RAW cosine)
-            pos_sim_raw = torch.mm(anchor, positive_embeddings[i].T).squeeze(0)
+            # Positive similarities: RAW cosine (before temperature)
+            pos_sim_raw = torch.mm(anchor, positive_embeddings[i].T).squeeze(0)  # (num_pos,)
             
-            # Negative similarities (RAW cosine, exclude self)
-            neg_sim_raw = anchor_anchor_sim[i].clone()
-            neg_sim_raw[i] = -float('inf')
-            neg_sim_raw = neg_sim_raw[neg_sim_raw != -float('inf')]
+            # Negative similarities: RAW (from pre-computed matrix, exclude self)
+            neg_sim_raw = anchor_anchor_sim[i][~mask[i]]  # (batch_size - 1,)
             
-            # Store RAW for metrics
+            # Store RAW similarities for metrics
             pos_sims_raw.append(pos_sim_raw.mean().item())
             neg_sims_raw.append(neg_sim_raw.mean().item())
             
-            # Scale by temperature for loss
+            # Apply temperature for loss computation
             pos_sim = pos_sim_raw / self.temperature
             neg_sim = neg_sim_raw / self.temperature
             
-            # InfoNCE
+            # InfoNCE loss
             for pos_score in pos_sim:
                 numerator = torch.exp(pos_score)
                 denominator = numerator + torch.sum(torch.exp(neg_sim))
@@ -125,8 +127,8 @@ if __name__ == "__main__":
     
     loss, metrics = loss_fn(anchors, positives)
     print(f"Loss: {loss.item():.4f}")
-    print(f"Pos sim: {metrics['mean_pos_sim']:.4f} (should be ~0.0-0.5)")
-    print(f"Neg sim: {metrics['mean_neg_sim']:.4f} (should be ~0.0-0.3)")
+    print(f"Pos sim: {metrics['mean_pos_sim']:.4f} (should be ~-0.5 to 0.5)")
+    print(f"Neg sim: {metrics['mean_neg_sim']:.4f} (should be ~-0.3 to 0.3)")
     
     if abs(metrics['mean_pos_sim']) < 2.0:
         print("✅ CORRECT - similarities in valid range!")
