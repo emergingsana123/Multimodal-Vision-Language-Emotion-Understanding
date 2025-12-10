@@ -44,7 +44,6 @@ class InfoNCELoss(nn.Module):
         Args:
             anchor_embeddings: (batch_size, embed_dim) - normalized embeddings
             positive_embeddings: (batch_size * num_pos, embed_dim) - normalized embeddings
-                                Each anchor has num_pos positives
         
         Returns:
             loss: Scalar tensor
@@ -53,70 +52,71 @@ class InfoNCELoss(nn.Module):
         batch_size = anchor_embeddings.shape[0]
         device = anchor_embeddings.device
         
-        # Assume each anchor has same number of positives
-        num_positives_total = positive_embeddings.shape[0]
-        num_pos_per_anchor = num_positives_total // batch_size
-        
-        # Normalize embeddings (if not already normalized)
+        # CRITICAL: Normalize embeddings
         anchor_embeddings = F.normalize(anchor_embeddings, p=2, dim=1)
         positive_embeddings = F.normalize(positive_embeddings, p=2, dim=1)
         
-        # Reshape positives to (batch_size, num_pos_per_anchor, embed_dim)
+        # Verify normalization
+        anchor_norms = anchor_embeddings.norm(dim=1)
+        if not torch.allclose(anchor_norms, torch.ones_like(anchor_norms), atol=1e-3):
+            print(f"⚠️ WARNING: Anchor embeddings not normalized! Norms: {anchor_norms.mean():.4f}")
+        
+        num_positives_total = positive_embeddings.shape[0]
+        num_pos_per_anchor = num_positives_total // batch_size
+        
+        # Reshape positives
         positive_embeddings = positive_embeddings.view(batch_size, num_pos_per_anchor, -1)
         
-        # Compute all anchor-anchor similarities (for in-batch negatives)
-        # (batch_size, batch_size)
-        anchor_anchor_sim = torch.mm(anchor_embeddings, anchor_embeddings.T) / self.temperature
+        # Compute similarities (should be in [-1, 1] range after normalization)
+        anchor_anchor_sim = torch.mm(anchor_embeddings, anchor_embeddings.T)
         
-        # Create mask to exclude self-similarities (diagonal)
+        # Check similarity range
+        if anchor_anchor_sim.max() > 1.1 or anchor_anchor_sim.min() < -1.1:
+            print(f"⚠️ WARNING: Similarities out of range! Min: {anchor_anchor_sim.min():.4f}, Max: {anchor_anchor_sim.max():.4f}")
+        
+        # Apply temperature AFTER checking range
+        anchor_anchor_sim = anchor_anchor_sim / self.temperature
+        
+        # Create mask
         mask = torch.eye(batch_size, dtype=torch.bool, device=device)
         
-        # Compute loss for each anchor - KEEP AS TENSOR
+        # Compute loss
         losses = []
-        positive_sims = []
-        negative_sims = []
+        positive_sims_raw = []
+        negative_sims_raw = []
         
         for i in range(batch_size):
-            # Get anchor
-            anchor = anchor_embeddings[i:i+1]  # (1, embed_dim)
+            anchor = anchor_embeddings[i:i+1]
             
-            # Positive similarities: anchor vs its positives
-            # (1, embed_dim) x (num_pos, embed_dim).T = (1, num_pos)
-            pos_sim = torch.mm(anchor, positive_embeddings[i].T) / self.temperature
-            pos_sim = pos_sim.squeeze(0)  # (num_pos,)
+            # Positive similarities (before temperature)
+            pos_sim_raw = torch.mm(anchor, positive_embeddings[i].T).squeeze(0)
+            pos_sim = pos_sim_raw / self.temperature
             
-            # Negative similarities: anchor vs all other anchors in batch
-            neg_sim = anchor_anchor_sim[i][~mask[i]]  # (batch_size - 1,)
+            # Negative similarities
+            neg_sim = anchor_anchor_sim[i][~mask[i]]
+            neg_sim_raw = neg_sim * self.temperature
             
-            # InfoNCE loss for this anchor
-            # For each positive, compute: -log(exp(pos) / (exp(pos) + sum(exp(neg))))
+            # InfoNCE
             for pos_score in pos_sim:
-                # Numerator: exp(positive similarity)
                 numerator = torch.exp(pos_score)
-                
-                # Denominator: exp(positive) + sum(exp(negatives))
                 denominator = numerator + torch.sum(torch.exp(neg_sim))
-                
-                # Loss: -log(numerator / denominator)
                 loss = -torch.log(numerator / (denominator + 1e-8))
                 losses.append(loss)
             
-            # Track similarities for metrics (detach for metrics only)
-            positive_sims.append(pos_sim.mean().item())
-            negative_sims.append(neg_sim.mean().item())
+            # Track raw similarities (before temperature)
+            positive_sims_raw.append(pos_sim_raw.mean().item())
+            negative_sims_raw.append(neg_sim_raw.mean().item())
         
-        # Stack and average losses - KEEP AS TENSOR
         total_loss = torch.stack(losses).mean()
         
-        # Compute metrics
         metrics = {
             'loss': total_loss.item(),
-            'mean_pos_sim': sum(positive_sims) / len(positive_sims),
-            'mean_neg_sim': sum(negative_sims) / len(negative_sims),
-            'pos_neg_gap': sum(positive_sims) / len(positive_sims) - sum(negative_sims) / len(negative_sims),
+            'mean_pos_sim': sum(positive_sims_raw) / len(positive_sims_raw),
+            'mean_neg_sim': sum(negative_sims_raw) / len(negative_sims_raw),
+            'pos_neg_gap': sum(positive_sims_raw) / len(positive_sims_raw) - sum(negative_sims_raw) / len(negative_sims_raw),
             'temperature': self.temperature,
             'num_positives': num_positives_total,
-            'num_negatives': batch_size - 1,  # Per anchor
+            'num_negatives': batch_size - 1,
         }
         
         return total_loss, metrics

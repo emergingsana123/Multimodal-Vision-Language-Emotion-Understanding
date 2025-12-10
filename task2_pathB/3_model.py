@@ -149,7 +149,7 @@ class TemporalHead(nn.Module):
         
         # L2 normalize
         embeddings = F.normalize(embeddings, p=2, dim=-1)
-        
+
         return embeddings
     
     def _attention_pooling(self, x: torch.Tensor) -> torch.Tensor:
