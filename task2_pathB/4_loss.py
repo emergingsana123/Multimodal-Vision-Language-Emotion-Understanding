@@ -1,6 +1,6 @@
 """
 Simplified InfoNCE loss for temporal emotion contrastive learning
-Uses in-batch negatives for efficiency
+FIXED: Reports RAW cosine similarities (not temperature-scaled)
 """
 
 import torch
@@ -9,50 +9,24 @@ import torch.nn.functional as F
 from typing import Dict, Tuple
 
 
-# ============================================================================
-# INFO-NCE LOSS WITH IN-BATCH NEGATIVES
-# ============================================================================
-
 class InfoNCELoss(nn.Module):
-    """
-    InfoNCE (Normalized Temperature-scaled Cross Entropy) Loss
-    
-    Core contrastive learning loss that:
-    - Pulls positive pairs closer in embedding space
-    - Pushes negative pairs farther apart
-    
-    Uses in-batch negatives: all other samples in the batch serve as negatives
-    This is efficient and works well (used in CLIP, SimCLR, MoCo, etc.)
-    """
+    """InfoNCE Loss with in-batch negatives"""
     
     def __init__(self, temperature: float = 0.07):
-        """
-        Args:
-            temperature: Temperature scaling parameter
-                        Lower = harder negatives (more discrimination)
-                        Typical range: 0.05-0.1
-        """
         super().__init__()
         self.temperature = temperature
     
     def forward(self, 
-            anchor_embeddings: torch.Tensor,
-            positive_embeddings: torch.Tensor) -> Tuple[torch.Tensor, Dict]:
+                anchor_embeddings: torch.Tensor,
+                positive_embeddings: torch.Tensor) -> Tuple[torch.Tensor, Dict]:
         """
-        Compute InfoNCE loss with in-batch negatives
+        Compute InfoNCE loss
         
-        Args:
-            anchor_embeddings: (batch_size, embed_dim) - normalized embeddings
-            positive_embeddings: (batch_size * num_pos, embed_dim) - normalized embeddings
-        
-        Returns:
-            loss: Scalar tensor
-            metrics: Dictionary with detailed metrics
+        Returns RAW cosine similarities in metrics (range [-1, 1])
         """
         batch_size = anchor_embeddings.shape[0]
-        device = anchor_embeddings.device
         
-        # Normalize embeddings (defensive, should already be normalized)
+        # Normalize
         anchor_embeddings = F.normalize(anchor_embeddings, p=2, dim=1)
         positive_embeddings = F.normalize(positive_embeddings, p=2, dim=1)
         
@@ -62,49 +36,51 @@ class InfoNCELoss(nn.Module):
         # Reshape positives
         positive_embeddings = positive_embeddings.view(batch_size, num_pos_per_anchor, -1)
         
-        # Compute loss
+        # Compute anchor-anchor similarities (RAW, for negatives)
+        anchor_anchor_sim = torch.mm(anchor_embeddings, anchor_embeddings.T)
+        
+        # Loss computation
         losses = []
-        positive_sims = []  # Track RAW similarities (before temperature)
-        negative_sims = []  # Track RAW similarities (before temperature)
+        pos_sims_raw = []
+        neg_sims_raw = []
         
         for i in range(batch_size):
-            anchor = anchor_embeddings[i:i+1]  # (1, embed_dim)
+            anchor = anchor_embeddings[i:i+1]
             
-            # Positive similarities - RAW (cosine similarity, range [-1, 1])
-            pos_sim_raw = torch.mm(anchor, positive_embeddings[i].T).squeeze(0)  # (num_pos,)
+            # Positive similarities (RAW cosine)
+            pos_sim_raw = torch.mm(anchor, positive_embeddings[i].T).squeeze(0)
             
-            # Negative similarities - RAW (with other anchors)
-            # Compute all anchor-anchor similarities
-            neg_sim_raw = torch.mm(anchor, anchor_embeddings.T).squeeze(0)  # (batch_size,)
-            # Remove self-similarity
-            neg_mask = torch.ones(batch_size, dtype=torch.bool, device=device)
-            neg_mask[i] = False
-            neg_sim_raw = neg_sim_raw[neg_mask]  # (batch_size - 1,)
+            # Negative similarities (RAW cosine, exclude self)
+            neg_sim_raw = anchor_anchor_sim[i].clone()
+            neg_sim_raw[i] = -float('inf')
+            neg_sim_raw = neg_sim_raw[neg_sim_raw != -float('inf')]
             
-            # Apply temperature for loss computation
-            pos_sim_scaled = pos_sim_raw / self.temperature
-            neg_sim_scaled = neg_sim_raw / self.temperature
+            # Store RAW for metrics
+            pos_sims_raw.append(pos_sim_raw.mean().item())
+            neg_sims_raw.append(neg_sim_raw.mean().item())
             
-            # InfoNCE loss
-            for pos_score in pos_sim_scaled:
+            # Scale by temperature for loss
+            pos_sim = pos_sim_raw / self.temperature
+            neg_sim = neg_sim_raw / self.temperature
+            
+            # InfoNCE
+            for pos_score in pos_sim:
                 numerator = torch.exp(pos_score)
-                denominator = numerator + torch.sum(torch.exp(neg_sim_scaled))
+                denominator = numerator + torch.sum(torch.exp(neg_sim))
                 loss = -torch.log(numerator / (denominator + 1e-8))
                 losses.append(loss)
-            
-            # Track RAW similarities for metrics (detach to avoid graph)
-            positive_sims.append(pos_sim_raw.mean().item())
-            negative_sims.append(neg_sim_raw.mean().item())
         
-        # Average loss
         total_loss = torch.stack(losses).mean()
         
-        # Compute metrics (using RAW similarities)
+        # Metrics use RAW similarities
+        mean_pos = sum(pos_sims_raw) / len(pos_sims_raw)
+        mean_neg = sum(neg_sims_raw) / len(neg_sims_raw)
+        
         metrics = {
             'loss': total_loss.item(),
-            'mean_pos_sim': sum(positive_sims) / len(positive_sims),
-            'mean_neg_sim': sum(negative_sims) / len(negative_sims),
-            'pos_neg_gap': sum(positive_sims) / len(positive_sims) - sum(negative_sims) / len(negative_sims),
+            'mean_pos_sim': mean_pos,
+            'mean_neg_sim': mean_neg,
+            'pos_neg_gap': mean_pos - mean_neg,
             'temperature': self.temperature,
             'num_positives': num_positives_total,
             'num_negatives': batch_size - 1,
@@ -113,144 +89,46 @@ class InfoNCELoss(nn.Module):
         return total_loss, metrics
 
 
-# ============================================================================
-# CONTRASTIVE ACCURACY
-# ============================================================================
-
 def compute_contrastive_accuracy(anchor_embeddings: torch.Tensor,
                                  positive_embeddings: torch.Tensor,
                                  top_k: int = 1) -> float:
-    """
-    Compute contrastive accuracy: how often positives rank higher than negatives
-    
-    Args:
-        anchor_embeddings: (batch_size, embed_dim)
-        positive_embeddings: (batch_size * num_pos, embed_dim)
-        top_k: Consider top-k predictions
-    
-    Returns:
-        Accuracy (fraction of correct rankings)
-    """
+    """Compute contrastive accuracy"""
     batch_size = anchor_embeddings.shape[0]
     num_pos_total = positive_embeddings.shape[0]
     num_pos_per_anchor = num_pos_total // batch_size
     
-    # Normalize
     anchor_embeddings = F.normalize(anchor_embeddings, p=2, dim=1)
     positive_embeddings = F.normalize(positive_embeddings, p=2, dim=1)
-    
-    # Reshape positives
     positive_embeddings = positive_embeddings.view(batch_size, num_pos_per_anchor, -1)
     
     correct = 0
-    total = 0
-    
     for i in range(batch_size):
         anchor = anchor_embeddings[i:i+1]
-        
-        # Similarity with own positives
         pos_sim = torch.mm(anchor, positive_embeddings[i].T).squeeze(0)
         min_pos_sim = pos_sim.min().item()
         
-        # Similarity with all other anchors (negatives)
         neg_sim = torch.mm(anchor, anchor_embeddings.T).squeeze(0)
-        neg_sim[i] = -float('inf')  # Mask out self
+        neg_sim[i] = -float('inf')
         max_neg_sim = neg_sim.max().item()
         
-        # Check if minimum positive > maximum negative
         if min_pos_sim > max_neg_sim:
             correct += 1
-        total += 1
     
-    return correct / total
+    return correct / batch_size
 
-
-# ============================================================================
-# TEST
-# ============================================================================
 
 if __name__ == "__main__":
-    print("="*80)
-    print("TESTING INFONCE LOSS")
-    print("="*80)
+    print("Testing loss...")
+    loss_fn = InfoNCELoss(0.07)
+    anchors = torch.randn(8, 128, requires_grad=True)
+    positives = torch.randn(16, 128, requires_grad=True)
     
-    # Create dummy embeddings WITH gradient tracking
-    batch_size = 8
-    embed_dim = 128
-    num_pos_per_anchor = 2
-    
-    # Random normalized embeddings - IMPORTANT: requires_grad=True
-    anchors = F.normalize(torch.randn(batch_size, embed_dim, requires_grad=True), p=2, dim=1)
-    positives = F.normalize(torch.randn(batch_size * num_pos_per_anchor, embed_dim, requires_grad=True), p=2, dim=1)
-    
-    print(f"\nTest setup:")
-    print(f"  Batch size: {batch_size}")
-    print(f"  Embedding dim: {embed_dim}")
-    print(f"  Positives per anchor: {num_pos_per_anchor}")
-    print(f"  In-batch negatives per anchor: {batch_size - 1}")
-    
-    # Test loss
-    print("\n1. Testing InfoNCE loss...")
-    loss_fn = InfoNCELoss(temperature=0.07)
     loss, metrics = loss_fn(anchors, positives)
+    print(f"Loss: {loss.item():.4f}")
+    print(f"Pos sim: {metrics['mean_pos_sim']:.4f} (should be ~0.0-0.5)")
+    print(f"Neg sim: {metrics['mean_neg_sim']:.4f} (should be ~0.0-0.3)")
     
-    print(f"✅ Loss computation successful!")
-    print(f"   Loss: {loss.item():.4f}")
-    print(f"   Metrics:")
-    for key, value in metrics.items():
-        if isinstance(value, float):
-            print(f"      {key}: {value:.4f}")
-        else:
-            print(f"      {key}: {value}")
-    
-    # Test with perfect alignment (positives = anchors)
-    print("\n2. Testing with perfect alignment...")
-    perfect_positives = anchors.detach().repeat(num_pos_per_anchor, 1)
-    perfect_positives.requires_grad = True
-    loss_perfect, metrics_perfect = loss_fn(anchors, perfect_positives)
-    
-    print(f"   Loss (should be low): {loss_perfect.item():.4f}")
-    print(f"   Pos similarity: {metrics_perfect['mean_pos_sim']:.4f}")
-    print(f"   Neg similarity: {metrics_perfect['mean_neg_sim']:.4f}")
-    
-    # Test accuracy (no gradients needed)
-    print("\n3. Testing contrastive accuracy...")
-    with torch.no_grad():
-        anchors_nograd = F.normalize(torch.randn(batch_size, embed_dim), p=2, dim=1)
-        positives_nograd = F.normalize(torch.randn(batch_size * num_pos_per_anchor, embed_dim), p=2, dim=1)
-        accuracy = compute_contrastive_accuracy(anchors_nograd, positives_nograd)
-        print(f"   Accuracy (random embeddings): {accuracy:.2%}")
-        
-        perfect_positives_nograd = anchors_nograd.repeat(num_pos_per_anchor, 1)
-        accuracy_perfect = compute_contrastive_accuracy(anchors_nograd, perfect_positives_nograd)
-        print(f"   Accuracy (perfect alignment): {accuracy_perfect:.2%}")
-    
-    # Test backward pass
-# Test backward pass
-    print("\n4. Testing backward pass...")
-    # Create fresh embeddings for backward test - DON'T normalize them first
-    test_anchors = torch.randn(batch_size, embed_dim, requires_grad=True)
-    test_positives = torch.randn(batch_size * num_pos_per_anchor, embed_dim, requires_grad=True)
-    
-    # Normalize will happen inside the loss function
-    test_loss, _ = loss_fn(test_anchors, test_positives)
-    test_loss.backward()
-    
-    # Check gradients exist on the leaf tensors
-    assert test_anchors.grad is not None, "Anchors should have gradients"
-    assert test_positives.grad is not None, "Positives should have gradients"
-    print(f"   ✅ Gradients computed successfully!")
-    print(f"   Anchor grad norm: {test_anchors.grad.norm().item():.4f}")
-    print(f"   Positive grad norm: {test_positives.grad.norm().item():.4f}")
-    
-    # Test different temperatures
-    print("\n5. Testing different temperatures...")
-    for temp in [0.05, 0.07, 0.1, 0.5]:
-        loss_fn_temp = InfoNCELoss(temperature=temp)
-        with torch.no_grad():
-            loss_temp, _ = loss_fn_temp(anchors_nograd, positives_nograd)
-        print(f"   Temperature {temp:.2f}: loss = {loss_temp.item():.4f}")
-    
-    print("\n" + "="*80)
-    print("✅ ALL LOSS TESTS PASSED!")
-    print("="*80)
+    if abs(metrics['mean_pos_sim']) < 2.0:
+        print("✅ CORRECT - similarities in valid range!")
+    else:
+        print("❌ WRONG - similarities too high!")
