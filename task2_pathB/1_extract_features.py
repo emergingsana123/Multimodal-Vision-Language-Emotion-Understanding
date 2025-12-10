@@ -301,4 +301,109 @@ def extract_all_features(config, logger):
         clip_cache_dir = cache_dir / clip_name
         
         # Skip if already extracted (unless not resuming)
-        if config.extraction_resum
+        if config.extraction_resume and clip_cache_dir.exists():
+            features_file = clip_cache_dir / 'features.npy'
+            metadata_file = clip_cache_dir / 'metadata.json'
+            
+            if features_file.exists() and metadata_file.exists():
+                skipped_count += 1
+                continue
+        
+        try:
+            # Extract features
+            features, metadata = extractor.extract_clip_features(clip_metadata)
+            
+            # Save to disk
+            save_clip_features(clip_cache_dir, features, metadata)
+            
+            extracted_count += 1
+            
+            # Clear cache periodically
+            if extracted_count % 50 == 0:
+                clear_gpu_cache()
+                logger.info(f"  Progress: {extracted_count}/{len(clips)} clips extracted")
+                print_gpu_memory("  ")
+        
+        except Exception as e:
+            logger.error(f"Failed to extract features for {clip_name}: {e}")
+            failed_count += 1
+            continue
+    
+    # Create feature index
+    logger.info("\n" + "=" * 80)
+    logger.info("CREATING FEATURE INDEX")
+    logger.info("=" * 80)
+    
+    index = create_feature_index(cache_dir)
+    
+    # Summary
+    logger.info("\n" + "=" * 80)
+    logger.info("EXTRACTION COMPLETE")
+    logger.info("=" * 80)
+    logger.info(f"Total clips: {len(clips)}")
+    logger.info(f"Extracted: {extracted_count}")
+    logger.info(f"Skipped (already exist): {skipped_count}")
+    logger.info(f"Failed: {failed_count}")
+    logger.info(f"Total frames: {index['total_frames']:,}")
+    logger.info(f"Cache directory: {cache_dir}")
+    logger.info("=" * 80)
+    
+    return index
+
+
+# ============================================================================
+# COMMAND LINE INTERFACE
+# ============================================================================
+
+def main():
+    """Main entry point"""
+    parser = argparse.ArgumentParser(description="Extract CLIP features from AFEW-VA dataset")
+    parser.add_argument('--test', action='store_true', help='Test mode: only process 10 clips')
+    parser.add_argument('--no-resume', action='store_true', help='Do not resume from existing features')
+    args = parser.parse_args()
+    
+    # Load config
+    config = get_config()
+    
+    # Override with CLI args
+    if args.test:
+        config.test_mode = True
+        print("\n⚠️  Running in TEST MODE (10 clips only)")
+    
+    if args.no_resume:
+        config.extraction_resume = False
+        print("\n⚠️  Resume disabled: will re-extract existing features")
+    
+    # Setup logging
+    logger = setup_logging(config.logs_dir, 'feature_extraction')
+    
+    # Print config
+    logger.info("\nConfiguration:")
+    logger.info(f"  Dataset: {config.dataset_dir}")
+    logger.info(f"  Output: {config.features_cache_dir}")
+    logger.info(f"  CLIP model: {config.clip_model_name}")
+    logger.info(f"  Batch size: {config.extraction_batch_size}")
+    logger.info(f"  Test mode: {config.test_mode}")
+    logger.info(f"  Resume: {config.extraction_resume}")
+    
+    try:
+        # Run extraction
+        index = extract_all_features(config, logger)
+        
+        logger.info("\n✅ Feature extraction completed successfully!")
+        logger.info(f"\nNext step: Run training with:")
+        logger.info(f"  python 5_train.py")
+        
+    except KeyboardInterrupt:
+        logger.warning("\n⚠️  Extraction interrupted by user")
+        logger.info("Progress has been saved. Re-run to resume.")
+    
+    except Exception as e:
+        logger.error(f"\n❌ Fatal error: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
