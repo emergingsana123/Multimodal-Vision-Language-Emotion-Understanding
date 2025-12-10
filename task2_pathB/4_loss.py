@@ -36,8 +36,8 @@ class InfoNCELoss(nn.Module):
         self.temperature = temperature
     
     def forward(self, 
-                anchor_embeddings: torch.Tensor,
-                positive_embeddings: torch.Tensor) -> Tuple[torch.Tensor, Dict]:
+            anchor_embeddings: torch.Tensor,
+            positive_embeddings: torch.Tensor) -> Tuple[torch.Tensor, Dict]:
         """
         Compute InfoNCE loss with in-batch negatives
         
@@ -51,6 +51,7 @@ class InfoNCELoss(nn.Module):
             metrics: Dictionary with detailed metrics
         """
         batch_size = anchor_embeddings.shape[0]
+        device = anchor_embeddings.device
         
         # Assume each anchor has same number of positives
         num_positives_total = positive_embeddings.shape[0]
@@ -68,10 +69,10 @@ class InfoNCELoss(nn.Module):
         anchor_anchor_sim = torch.mm(anchor_embeddings, anchor_embeddings.T) / self.temperature
         
         # Create mask to exclude self-similarities (diagonal)
-        mask = torch.eye(batch_size, dtype=torch.bool, device=anchor_embeddings.device)
+        mask = torch.eye(batch_size, dtype=torch.bool, device=device)
         
-        # Compute loss for each anchor
-        total_loss = 0.0
+        # Compute loss for each anchor - KEEP AS TENSOR
+        losses = []
         positive_sims = []
         negative_sims = []
         
@@ -98,19 +99,18 @@ class InfoNCELoss(nn.Module):
                 
                 # Loss: -log(numerator / denominator)
                 loss = -torch.log(numerator / (denominator + 1e-8))
-                total_loss += loss
+                losses.append(loss)
             
-            # Track similarities for metrics
+            # Track similarities for metrics (detach for metrics only)
             positive_sims.append(pos_sim.mean().item())
             negative_sims.append(neg_sim.mean().item())
         
-        # Average loss over all anchor-positive pairs
-        num_pairs = batch_size * num_pos_per_anchor
-        avg_loss = total_loss / num_pairs
+        # Stack and average losses - KEEP AS TENSOR
+        total_loss = torch.stack(losses).mean()
         
         # Compute metrics
         metrics = {
-            'loss': avg_loss.item(),
+            'loss': total_loss.item(),
             'mean_pos_sim': sum(positive_sims) / len(positive_sims),
             'mean_neg_sim': sum(negative_sims) / len(negative_sims),
             'pos_neg_gap': sum(positive_sims) / len(positive_sims) - sum(negative_sims) / len(negative_sims),
@@ -119,7 +119,7 @@ class InfoNCELoss(nn.Module):
             'num_negatives': batch_size - 1,  # Per anchor
         }
         
-        return avg_loss, metrics
+        return total_loss, metrics
 
 
 # ============================================================================
