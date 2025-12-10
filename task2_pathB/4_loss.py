@@ -52,14 +52,9 @@ class InfoNCELoss(nn.Module):
         batch_size = anchor_embeddings.shape[0]
         device = anchor_embeddings.device
         
-        # CRITICAL: Normalize embeddings
+        # Normalize embeddings (defensive, should already be normalized)
         anchor_embeddings = F.normalize(anchor_embeddings, p=2, dim=1)
         positive_embeddings = F.normalize(positive_embeddings, p=2, dim=1)
-        
-        # Verify normalization
-        anchor_norms = anchor_embeddings.norm(dim=1)
-        if not torch.allclose(anchor_norms, torch.ones_like(anchor_norms), atol=1e-3):
-            print(f"⚠️ WARNING: Anchor embeddings not normalized! Norms: {anchor_norms.mean():.4f}")
         
         num_positives_total = positive_embeddings.shape[0]
         num_pos_per_anchor = num_positives_total // batch_size
@@ -67,53 +62,49 @@ class InfoNCELoss(nn.Module):
         # Reshape positives
         positive_embeddings = positive_embeddings.view(batch_size, num_pos_per_anchor, -1)
         
-        # Compute similarities (should be in [-1, 1] range after normalization)
-        anchor_anchor_sim = torch.mm(anchor_embeddings, anchor_embeddings.T)
-        
-        # Check similarity range
-        if anchor_anchor_sim.max() > 1.1 or anchor_anchor_sim.min() < -1.1:
-            print(f"⚠️ WARNING: Similarities out of range! Min: {anchor_anchor_sim.min():.4f}, Max: {anchor_anchor_sim.max():.4f}")
-        
-        # Apply temperature AFTER checking range
-        anchor_anchor_sim = anchor_anchor_sim / self.temperature
-        
-        # Create mask
-        mask = torch.eye(batch_size, dtype=torch.bool, device=device)
-        
         # Compute loss
         losses = []
-        positive_sims_raw = []
-        negative_sims_raw = []
+        positive_sims = []  # Track RAW similarities (before temperature)
+        negative_sims = []  # Track RAW similarities (before temperature)
         
         for i in range(batch_size):
-            anchor = anchor_embeddings[i:i+1]
+            anchor = anchor_embeddings[i:i+1]  # (1, embed_dim)
             
-            # Positive similarities (before temperature)
-            pos_sim_raw = torch.mm(anchor, positive_embeddings[i].T).squeeze(0)
-            pos_sim = pos_sim_raw / self.temperature
+            # Positive similarities - RAW (cosine similarity, range [-1, 1])
+            pos_sim_raw = torch.mm(anchor, positive_embeddings[i].T).squeeze(0)  # (num_pos,)
             
-            # Negative similarities
-            neg_sim = anchor_anchor_sim[i][~mask[i]]
-            neg_sim_raw = neg_sim * self.temperature
+            # Negative similarities - RAW (with other anchors)
+            # Compute all anchor-anchor similarities
+            neg_sim_raw = torch.mm(anchor, anchor_embeddings.T).squeeze(0)  # (batch_size,)
+            # Remove self-similarity
+            neg_mask = torch.ones(batch_size, dtype=torch.bool, device=device)
+            neg_mask[i] = False
+            neg_sim_raw = neg_sim_raw[neg_mask]  # (batch_size - 1,)
             
-            # InfoNCE
-            for pos_score in pos_sim:
+            # Apply temperature for loss computation
+            pos_sim_scaled = pos_sim_raw / self.temperature
+            neg_sim_scaled = neg_sim_raw / self.temperature
+            
+            # InfoNCE loss
+            for pos_score in pos_sim_scaled:
                 numerator = torch.exp(pos_score)
-                denominator = numerator + torch.sum(torch.exp(neg_sim))
+                denominator = numerator + torch.sum(torch.exp(neg_sim_scaled))
                 loss = -torch.log(numerator / (denominator + 1e-8))
                 losses.append(loss)
             
-            # Track raw similarities (before temperature)
-            positive_sims_raw.append(pos_sim_raw.mean().item())
-            negative_sims_raw.append(neg_sim_raw.mean().item())
+            # Track RAW similarities for metrics (detach to avoid graph)
+            positive_sims.append(pos_sim_raw.mean().item())
+            negative_sims.append(neg_sim_raw.mean().item())
         
+        # Average loss
         total_loss = torch.stack(losses).mean()
         
+        # Compute metrics (using RAW similarities)
         metrics = {
             'loss': total_loss.item(),
-            'mean_pos_sim': sum(positive_sims_raw) / len(positive_sims_raw),
-            'mean_neg_sim': sum(negative_sims_raw) / len(negative_sims_raw),
-            'pos_neg_gap': sum(positive_sims_raw) / len(positive_sims_raw) - sum(negative_sims_raw) / len(negative_sims_raw),
+            'mean_pos_sim': sum(positive_sims) / len(positive_sims),
+            'mean_neg_sim': sum(negative_sims) / len(negative_sims),
+            'pos_neg_gap': sum(positive_sims) / len(positive_sims) - sum(negative_sims) / len(negative_sims),
             'temperature': self.temperature,
             'num_positives': num_positives_total,
             'num_negatives': batch_size - 1,
