@@ -195,6 +195,24 @@ class TemporalHead(nn.Module):
 
 
 # ============================================================================
+# HELPER: FIND LORA TARGET MODULES
+# ============================================================================
+
+def find_lora_modules(model):
+    """Find all linear layer names in transformer for LoRA targeting"""
+    target_modules = set()
+    
+    for name, module in model.named_modules():
+        if isinstance(module, nn.Linear):
+            # Get the last part of the name (e.g., "self_attn.in_proj_weight" -> "in_proj_weight")
+            parts = name.split('.')
+            if len(parts) > 0:
+                target_modules.add(parts[-1])
+    
+    return sorted(list(target_modules))
+
+
+# ============================================================================
 # TEMPORAL HEAD WITH LORA
 # ============================================================================
 
@@ -224,10 +242,31 @@ def create_model_with_lora(config):
     # Apply LoRA if enabled
     if config.use_lora:
         print(f"\nApplying LoRA...")
+        
+        # Find correct target modules
+        available_modules = find_lora_modules(model)
+        print(f"  Available modules for LoRA: {available_modules}")
+        
+        # Use the correct module names from PyTorch's TransformerEncoderLayer
+        # These are the query/key/value projections in self-attention
+        target_modules = [
+            "in_proj_weight",  # This contains Q, K, V for self-attention
+            "out_proj",        # Output projection in self-attention
+        ]
+        
+        # Verify modules exist
+        actual_targets = [m for m in target_modules if m in available_modules]
+        
+        if not actual_targets:
+            print(f"  ⚠️  Warning: Could not find standard attention modules")
+            print(f"  Using all linear layers in transformer instead")
+            actual_targets = [m for m in available_modules 
+                            if 'transformer' in m or 'attention' in m.lower()]
+        
         print(f"  Rank: {config.lora_rank}")
         print(f"  Alpha: {config.lora_alpha}")
         print(f"  Dropout: {config.lora_dropout}")
-        print(f"  Target modules: {config.lora_target_modules}")
+        print(f"  Actual target modules: {actual_targets}")
         
         from peft import LoraConfig, get_peft_model
         
@@ -235,22 +274,28 @@ def create_model_with_lora(config):
         lora_config = LoraConfig(
             r=config.lora_rank,
             lora_alpha=config.lora_alpha,
-            target_modules=config.lora_target_modules,
+            target_modules=actual_targets if actual_targets else None,  # None = all linear layers
             lora_dropout=config.lora_dropout,
             bias="none",
             task_type=None  # No task type for custom models
         )
         
-        # Apply LoRA
-        model = get_peft_model(model, lora_config)
-        model.print_trainable_parameters()
+        try:
+            # Apply LoRA
+            model = get_peft_model(model, lora_config)
+            model.print_trainable_parameters()
+            
+            # Get updated params
+            params = model.get_num_params()
+            print(f"\nAfter LoRA:")
+            print(f"  Total: {params['total']:,}")
+            print(f"  Trainable: {params['trainable']:,}")
+            print(f"  Trainable ratio: {100 * params['trainable'] / params['total']:.2f}%")
         
-        # Get updated params
-        params = model.get_num_params()
-        print(f"\nAfter LoRA:")
-        print(f"  Total: {params['total']:,}")
-        print(f"  Trainable: {params['trainable']:,}")
-        print(f"  Trainable ratio: {100 * params['trainable'] / params['total']:.2f}%")
+        except Exception as e:
+            print(f"\n⚠️  LoRA application failed: {e}")
+            print(f"  Falling back to full model training")
+            # Keep base model without LoRA
     
     print("="*80)
     
