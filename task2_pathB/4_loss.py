@@ -235,15 +235,17 @@ if __name__ == "__main__":
         print(f"   Accuracy (perfect alignment): {accuracy_perfect:.2%}")
     
     # Test backward pass
+# Test backward pass
     print("\n4. Testing backward pass...")
-    # Create fresh embeddings for backward test
-    test_anchors = F.normalize(torch.randn(batch_size, embed_dim, requires_grad=True), p=2, dim=1)
-    test_positives = F.normalize(torch.randn(batch_size * num_pos_per_anchor, embed_dim, requires_grad=True), p=2, dim=1)
+    # Create fresh embeddings for backward test - DON'T normalize them first
+    test_anchors = torch.randn(batch_size, embed_dim, requires_grad=True)
+    test_positives = torch.randn(batch_size * num_pos_per_anchor, embed_dim, requires_grad=True)
     
+    # Normalize will happen inside the loss function
     test_loss, _ = loss_fn(test_anchors, test_positives)
     test_loss.backward()
     
-    # Check gradients exist
+    # Check gradients exist on the leaf tensors
     assert test_anchors.grad is not None, "Anchors should have gradients"
     assert test_positives.grad is not None, "Positives should have gradients"
     print(f"   ✅ Gradients computed successfully!")
