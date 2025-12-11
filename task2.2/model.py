@@ -127,12 +127,12 @@ class TemporalEmotionModel(nn.Module):
         # Store original forward
         original_forward = attn.forward
         
-        # Create wrapper that accepts all kwargs
-        def lora_forward(x, attn_mask=None, **kwargs):
-            """LoRA-enhanced attention - accepts all kwargs from open_clip"""
+        # Create wrapper that accepts ANY arguments
+        def lora_forward(*args, **kwargs):
+            """LoRA-enhanced attention - accepts all args/kwargs from open_clip"""
             # For now, just call original - LoRA layers train separately
             # Full integration would modify Q and V inside attention
-            return original_forward(x, attn_mask=attn_mask, **kwargs)
+            return original_forward(*args, **kwargs)
         
         attn.forward = lora_forward
             
