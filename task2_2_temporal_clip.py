@@ -86,7 +86,7 @@ class Config:
 
     # Training
     BATCH_SIZE = 32
-    LEARNING_RATE = 5e-5
+    LEARNING_RATE = 2e-4
     NUM_EPOCHS = 20
     WARMUP_EPOCHS = 2
     TEMPERATURE = 0.07
@@ -451,38 +451,62 @@ print("LoRA parameters will match the model's dtype (float16/float32)")
 """## Temporal Contrastive Loss"""
 
 class TemporalContrastiveLoss(nn.Module):
-    def __init__(self, temperature=0.07, margin=0.5):
+    """
+    Improved loss to prevent collapse
+    """
+    def __init__(self, temperature=0.07, margin=1.0):  # Increased margin!
         super().__init__()
         self.temperature = temperature
         self.margin = margin
-
+    
     def forward(self, anchor_emb, positive_emb, negative_emb,
                 anchor_valence, positive_valence, anchor_arousal, positive_arousal):
+        """
+        FIXED: Stronger loss formulation
+        """
         # Cosine similarities
         pos_sim = F.cosine_similarity(anchor_emb, positive_emb, dim=1)
         neg_sim = F.cosine_similarity(anchor_emb, negative_emb, dim=1)
-
-        # Triplet loss
-        triplet_loss = F.relu((neg_sim - pos_sim) / self.temperature + self.margin).mean()
-
-        # Emotion consistency
+        
+        # CRITICAL FIX 1: Stronger triplet loss
+        # Old: (neg_sim - pos_sim) / temperature + margin
+        # New: More aggressive penalization
+        triplet_loss = F.relu(neg_sim - pos_sim + self.margin).mean()
+        
+        # CRITICAL FIX 2: Add orthogonality loss to prevent collapse
+        # Penalize when all embeddings become similar
+        batch_mean = anchor_emb.mean(dim=0)
+        diversity_loss = -torch.var(anchor_emb, dim=0).mean()  # Encourage variance
+        
+        # CRITICAL FIX 3: Emotion consistency (keep as is)
         valence_diff = torch.abs(anchor_valence - positive_valence)
         arousal_diff = torch.abs(anchor_arousal - positive_arousal)
         emotion_distance = torch.sqrt(valence_diff**2 + arousal_diff**2)
         emotion_weight = torch.exp(-emotion_distance / 5.0)
         consistency_loss = ((1.0 - pos_sim) * emotion_weight).mean()
-
-        total_loss = triplet_loss + 0.5 * consistency_loss
-
+        
+        # CRITICAL FIX 4: Add hard negative mining
+        # Penalize when negative similarity is too high
+        negative_penalty = F.relu(neg_sim - 0.5).mean()  # Negatives should be < 0.5
+        
+        # Total loss with rebalanced weights
+        total_loss = (
+            triplet_loss + 
+            0.3 * consistency_loss + 
+            0.1 * diversity_loss +
+            0.5 * negative_penalty
+        )
+        
         return {
             'total_loss': total_loss,
             'triplet_loss': triplet_loss,
             'consistency_loss': consistency_loss,
+            'diversity_loss': diversity_loss,
+            'negative_penalty': negative_penalty,
             'pos_sim': pos_sim.mean(),
             'neg_sim': neg_sim.mean(),
         }
 
-print("✅ Loss function defined")
 
 """## Initialize Model & Datasets"""
 
@@ -515,7 +539,11 @@ print(f"Val batches: {len(val_loader)}")
 
 # Setup training
 criterion = TemporalContrastiveLoss(temperature=config.TEMPERATURE)
-optimizer = torch.optim.AdamW(model.parameters(), lr=config.LEARNING_RATE, weight_decay=0.01)
+optimizer = torch.optim.AdamW(
+    model.parameters(), 
+    lr=2e-4,
+    weight_decay=0.05  # Increased from 0.01
+)
 
 num_training_steps = len(train_loader) * config.NUM_EPOCHS
 num_warmup_steps = num_training_steps * config.WARMUP_EPOCHS // config.NUM_EPOCHS
@@ -654,7 +682,13 @@ print("="*70)
 # DIAGNOSTIC CODE - Run this BEFORE training to debug
 
 # Test a single batch
+print("\nChecking triplet quality...")
 test_batch = next(iter(train_loader))
+
+print(f"Anchor valences: {test_batch['anchor_valences'][:5]}")
+print(f"Positive valences: {test_batch['positive_valences'][:5]}")
+print(f"Difference: {torch.abs(test_batch['anchor_valences'][:5] - test_batch['positive_valences'][:5])}")
+
 
 print("=" * 70)
 print("DEBUGGING PROCESSOR OUTPUT")
