@@ -75,7 +75,8 @@ class Config:
 
 
     # Model
-    CLIP_MODEL = "openai/clip-vit-large-patch14"  # 300M params
+    CLIP_MODEL = "openai/clip-vit-base-patch16"
+  # 300M params
 
     # LoRA
     LORA_R = 16
