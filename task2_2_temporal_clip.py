@@ -86,7 +86,7 @@ class Config:
 
     # Training
     BATCH_SIZE = 32
-    LEARNING_RATE = 1e-4
+    LEARNING_RATE = 5e-5
     NUM_EPOCHS = 20
     WARMUP_EPOCHS = 2
     TEMPERATURE = 0.07
@@ -354,7 +354,7 @@ class CLIPWithLoRA(nn.Module):
         print(f"Loading {config.CLIP_MODEL}...")
         clip_full = CLIPVisionModel.from_pretrained(
             config.CLIP_MODEL,
-            torch_dtype=torch.float16 if config.DEVICE.type == 'cuda' else torch.float32
+            torch_dtype=torch.float32 if config.DEVICE.type == 'cuda' else torch.float32
         )
 
         # Extract vision model
