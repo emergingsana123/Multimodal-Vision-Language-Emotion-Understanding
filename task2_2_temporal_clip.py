@@ -293,36 +293,32 @@ print("✅ Dataset classes defined")
 # ABSOLUTE FIX - Explicitly freeze original layer parameters
 
 class LoRALayer(nn.Module):
-    """LoRA with EXPLICIT parameter freezing"""
+    """LoRA with proper freeze and device handling"""
     def __init__(self, original_layer, r=16, alpha=32, dropout=0.1):
         super().__init__()
         
-        # DON'T store original_layer as a module attribute
-        # Store it as a regular attribute to prevent parameter registration
         self.r = r
         self.alpha = alpha
         self.scaling = alpha / r
         
-        # Extract weight and bias WITHOUT registering as parameters
-        with torch.no_grad():
-            self.weight = original_layer.weight.detach().clone()
-            if original_layer.bias is not None:
-                self.bias = original_layer.bias.detach().clone()
-            else:
-                self.bias = None
+        # Clone weights and move to same device as original
+        device = next(original_layer.parameters()).device
+        dtype = next(original_layer.parameters()).dtype
         
-        # Make sure they're not trainable
-        self.weight.requires_grad = False
-        if self.bias is not None:
-            self.bias.requires_grad = False
+        with torch.no_grad():
+            # Register as buffer (not parameter) so it's not trainable
+            self.register_buffer('weight', original_layer.weight.detach().clone().to(device))
+            if original_layer.bias is not None:
+                self.register_buffer('bias', original_layer.bias.detach().clone().to(device))
+            else:
+                self.register_buffer('bias', None)
         
         in_features = original_layer.in_features
         out_features = original_layer.out_features
-        original_dtype = self.weight.dtype
         
-        # LoRA parameters (ONLY these are trainable)
-        self.lora_A = nn.Parameter(torch.zeros(in_features, r, dtype=original_dtype))
-        self.lora_B = nn.Parameter(torch.zeros(r, out_features, dtype=original_dtype))
+        # LoRA parameters - ONLY these are trainable
+        self.lora_A = nn.Parameter(torch.zeros(in_features, r, dtype=dtype, device=device))
+        self.lora_B = nn.Parameter(torch.zeros(r, out_features, dtype=dtype, device=device))
         self.dropout = nn.Dropout(dropout)
         
         # Initialize
@@ -331,16 +327,16 @@ class LoRALayer(nn.Module):
             nn.init.zeros_(self.lora_B)
     
     def forward(self, x):
-        """Forward with manual linear layer + LoRA"""
-        # Manual linear: y = xW^T + b
+        """Forward with manual linear + LoRA"""
+        # Base layer (frozen weights)
         result = F.linear(x, self.weight, self.bias)
         
         # LoRA addition
-        x_dtype = x.dtype
-        if x_dtype != self.lora_A.dtype:
-            x = x.to(self.lora_A.dtype)
+        x_for_lora = x
+        if x.dtype != self.lora_A.dtype:
+            x_for_lora = x.to(self.lora_A.dtype)
         
-        lora_result = self.dropout(x) @ self.lora_A @ self.lora_B * self.scaling
+        lora_result = self.dropout(x_for_lora) @ self.lora_A @ self.lora_B * self.scaling
         
         if lora_result.dtype != result.dtype:
             lora_result = lora_result.to(result.dtype)
@@ -349,7 +345,7 @@ class LoRALayer(nn.Module):
 
 
 class CLIPWithLoRA(nn.Module):
-    """CLIP with LoRA - TRUE FREEZE VERSION"""
+    """CLIP with LoRA - COMPLETE FREEZE + DEVICE FIX"""
     
     def __init__(self, config):
         super().__init__()
@@ -363,12 +359,20 @@ class CLIPWithLoRA(nn.Module):
         
         self.vision_model = clip_full.vision_model
         
-        print("Applying LoRA with true freeze...")
+        # STEP 1: Freeze EVERYTHING first
+        print("Freezing ALL base model parameters...")
+        for param in self.vision_model.parameters():
+            param.requires_grad = False
+        
+        # STEP 2: Apply LoRA (creates NEW trainable params)
+        print("Applying LoRA layers...")
         self._apply_lora()
+        
+        # STEP 3: Verify
         self._print_trainable_parameters()
     
     def _apply_lora(self):
-        """Apply LoRA by REPLACING layers entirely"""
+        """Replace q_proj and v_proj with LoRA versions"""
         lora_count = 0
         
         for layer_idx, layer in enumerate(self.vision_model.encoder.layers):
@@ -382,10 +386,9 @@ class CLIPWithLoRA(nn.Module):
                     dropout=self.config.LORA_DROPOUT
                 )
                 layer.self_attn.q_proj = new_q
-                del old_q  # Delete to free memory
                 lora_count += 1
             
-            # Replace v_proj
+            # Replace v_proj  
             if hasattr(layer.self_attn, 'v_proj'):
                 old_v = layer.self_attn.v_proj
                 new_v = LoRALayer(
@@ -395,44 +398,57 @@ class CLIPWithLoRA(nn.Module):
                     dropout=self.config.LORA_DROPOUT
                 )
                 layer.self_attn.v_proj = new_v
-                del old_v  # Delete to free memory
                 lora_count += 1
         
-        print(f"✅ Applied LoRA to {lora_count} layers")
-        
-        # Explicitly check and freeze any remaining base params
-        print("Double-checking base model freeze...")
-        for name, param in self.vision_model.named_parameters():
-            if 'lora_' not in name and 'weight' not in name and 'bias' not in name:
-                # This is a base parameter that shouldn't exist anymore
-                param.requires_grad = False
+        print(f"✅ Replaced {lora_count} layers with LoRA")
     
     def _print_trainable_parameters(self):
-        trainable = sum(p.numel() for p in self.parameters() if p.requires_grad)
-        total = sum(p.numel() for p in self.parameters())
+        """Verify only LoRA params are trainable"""
+        trainable = 0
+        total = 0
+        lora_trainable = 0
+        base_trainable_list = []
+        
+        for name, param in self.named_parameters():
+            total += param.numel()
+            if param.requires_grad:
+                trainable += param.numel()
+                if 'lora_' in name:
+                    lora_trainable += param.numel()
+                else:
+                    # This shouldn't happen!
+                    base_trainable_list.append((name, param.numel()))
+        
         percentage = 100 * trainable / total
         
         print(f"\nTrainable params: {trainable:,}")
         print(f"Total params: {total:,}")
         print(f"Trainable %: {percentage:.2f}%")
+        print(f"LoRA params: {lora_trainable:,}")
         
-        if percentage > 10:
-            print("❌ ERROR: More than 10% trainable!")
-            print("   Listing trainable parameters:")
+        if len(base_trainable_list) > 0:
+            print(f"\n❌ ERROR: {len(base_trainable_list)} base parameters are still trainable:")
+            for name, count in base_trainable_list[:10]:  # Show first 10
+                print(f"  - {name}: {count:,}")
+            
+            print("\nAttempting to freeze them...")
             for name, param in self.named_parameters():
-                if param.requires_grad:
-                    print(f"     {name}: {param.numel():,}")
-        elif percentage < 0.5:
-            print("❌ ERROR: Less than 0.5% trainable - LoRA not applied?")
+                if 'lora_' not in name:
+                    param.requires_grad = False
+            
+            # Recount
+            trainable_after = sum(p.numel() for p in self.parameters() if p.requires_grad)
+            print(f"After fix: {trainable_after:,} trainable")
+        
+        if percentage < 0.5:
+            print("❌ Less than 0.5% trainable - LoRA may not work")
+        elif percentage > 10:
+            print("❌ More than 10% trainable - base not frozen!")
         else:
             print("✅ Correct! Only LoRA parameters are trainable")
-        
-        # Count LoRA params specifically
-        lora_params = sum(p.numel() for n, p in self.named_parameters() 
-                         if 'lora_' in n and p.requires_grad)
-        print(f"LoRA params: {lora_params:,}")
     
     def forward(self, pixel_values):
+        """Forward pass"""
         outputs = self.vision_model(pixel_values=pixel_values)
         
         if hasattr(outputs, 'pooler_output'):
@@ -452,7 +468,7 @@ class CLIPWithLoRA(nn.Module):
         path.mkdir(parents=True, exist_ok=True)
         
         lora_state = {name: param.cpu() for name, param in self.named_parameters() 
-                      if 'lora_' in n and param.requires_grad}
+                      if 'lora_' in name and param.requires_grad}
         torch.save(lora_state, path / 'lora_weights.pt')
         
         config_dict = {
@@ -467,115 +483,11 @@ class CLIPWithLoRA(nn.Module):
 
 
 print("="*70)
-print("✅ TRUE FREEZE VERSION")
+print("✅ COMPLETE FIX: Freeze + Device")
 print("="*70)
-print("LoRA layers clone and detach base weights")
-print("Base weights are NOT registered as parameters")
-print("Only LoRA A and B matrices are trainable")
-
-# class CLIPWithLoRA(nn.Module):
-#     """CLIP Vision Model with Manual LoRA - DTYPE SAFE VERSION"""
-
-#     def __init__(self, config):
-#         super().__init__()
-#         self.config = config
-
-#         print(f"Loading {config.CLIP_MODEL}...")
-#         clip_full = CLIPVisionModel.from_pretrained(
-#             config.CLIP_MODEL,
-#             torch_dtype=torch.float32 if config.DEVICE.type == 'cuda' else torch.float32
-#         )
-
-#         # Extract vision model
-#         self.vision_model = clip_full.vision_model
-
-#         print("Applying manual LoRA with dtype matching...")
-#         self._apply_lora()
-#         self._print_trainable_parameters()
-
-#     def _apply_lora(self):
-#         """Apply LoRA to q_proj and v_proj"""
-#         lora_count = 0
-#         for layer in self.vision_model.encoder.layers:
-#             if hasattr(layer.self_attn, 'q_proj'):
-#                 layer.self_attn.q_proj = LoRALayer(
-#                     layer.self_attn.q_proj,
-#                     r=self.config.LORA_R,
-#                     alpha=self.config.LORA_ALPHA,
-#                     dropout=self.config.LORA_DROPOUT
-#                 )
-#                 lora_count += 1
-
-#             if hasattr(layer.self_attn, 'v_proj'):
-#                 layer.self_attn.v_proj = LoRALayer(
-#                     layer.self_attn.v_proj,
-#                     r=self.config.LORA_R,
-#                     alpha=self.config.LORA_ALPHA,
-#                     dropout=self.config.LORA_DROPOUT
-#                 )
-#                 lora_count += 1
-
-#         print(f"✅ Applied LoRA to {lora_count} layers")
-
-#     def _print_trainable_parameters(self):
-#         trainable = sum(p.numel() for p in self.parameters() if p.requires_grad)
-#         total = sum(p.numel() for p in self.parameters())
-#         print(f"Trainable: {trainable:,} / {total:,} ({100*trainable/total:.2f}%)")
-
-#     def forward(self, pixel_values):
-#         """Forward pass with proper dtype handling"""
-#         # Call vision_model
-#         outputs = self.vision_model(pixel_values=pixel_values)
-
-#         # Extract pooler output
-#         if hasattr(outputs, 'pooler_output'):
-#             pooled_output = outputs.pooler_output
-#         elif isinstance(outputs, tuple):
-#             pooled_output = outputs[1]
-#         else:
-#             pooled_output = outputs.last_hidden_state[:, 0, :]
-
-#         # Normalize
-#         embeddings = F.normalize(pooled_output, p=2, dim=-1)
-
-#         return embeddings
-
-#     def save_lora_weights(self, path):
-#         from pathlib import Path
-#         import json
-#         path = Path(path)
-#         path.mkdir(parents=True, exist_ok=True)
-
-#         lora_state = {name: param.cpu() for name, param in self.named_parameters()
-#                       if 'lora_' in name and param.requires_grad}
-#         torch.save(lora_state, path / 'lora_weights.pt')
-
-#         config_dict = {
-#             'lora_r': self.config.LORA_R,
-#             'lora_alpha': self.config.LORA_ALPHA,
-#             'clip_model': self.config.CLIP_MODEL,
-#         }
-#         with open(path / 'lora_config.json', 'w') as f:
-#             json.dump(config_dict, f, indent=2)
-
-#         print(f"✅ Saved to {path}")
-
-
-# print("="*70)
-# print("✅ DTYPE-SAFE VERSION")
-# print("="*70)
-# print("LoRA parameters will match the model's dtype (float16/float32)")
-
-# model = CLIPWithLoRA(config).to(config.DEVICE)
-
-# test_batch = next(iter(train_loader))
-# test_inputs = processor(images=test_batch['anchor_images'][:4], return_tensors='pt')
-# test_pixels = test_inputs['pixel_values'].to(config.DEVICE)
-
-# with torch.no_grad():
-#     test_emb = model(test_pixels)
-#     print(f"✅ SUCCESS! Shape: {test_emb.shape}")
-#     print(f"Embedding dtype: {test_emb.dtype}")
+print("1. Uses register_buffer() for frozen weights (not trainable)")
+print("2. Weights created on correct device")
+print("3. Explicitly freezes all base params before LoRA")
 
 """## Temporal Contrastive Loss"""
 
