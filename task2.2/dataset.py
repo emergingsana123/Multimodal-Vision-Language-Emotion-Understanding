@@ -1,5 +1,6 @@
 """
 Dataset loader for AFEW-VA with temporal frame sampling
+FIXED: Handles multiple JSON formats
 """
 import os
 import json
@@ -74,23 +75,21 @@ class AFEWVADataset(Dataset):
             if len(frame_files) == 0:
                 continue
             
+            # Parse annotations based on format
+            anno_dict = self._parse_annotations(annotations)
+            
             # Build frame list with VA values
             frames = []
             for frame_path in frame_files:
                 frame_name = Path(frame_path).stem
                 
-                # Find matching annotation
-                frame_anno = None
-                for anno in annotations:
-                    if str(anno.get('frame', '')).zfill(5) == frame_name:
-                        frame_anno = anno
-                        break
-                
-                if frame_anno is not None:
+                # Get VA values for this frame
+                if frame_name in anno_dict:
+                    valence, arousal = anno_dict[frame_name]
                     frames.append({
                         'path': frame_path,
-                        'valence': frame_anno.get('valence', 0.0),
-                        'arousal': frame_anno.get('arousal', 0.0)
+                        'valence': valence,
+                        'arousal': arousal
                     })
             
             if len(frames) >= self.num_frames:
@@ -100,6 +99,41 @@ class AFEWVADataset(Dataset):
                 })
         
         return clips
+    
+    def _parse_annotations(self, annotations) -> Dict[str, Tuple[float, float]]:
+        """
+        Parse annotations in various formats
+        Returns: dict mapping frame_name -> (valence, arousal)
+        """
+        anno_dict = {}
+        
+        # Format 1: List of dicts [{"frame": 0, "valence": 0.5, "arousal": 0.2}, ...]
+        if isinstance(annotations, list):
+            for anno in annotations:
+                if isinstance(anno, dict):
+                    frame_num = anno.get('frame', None)
+                    if frame_num is not None:
+                        frame_name = str(frame_num).zfill(5)
+                        valence = float(anno.get('valence', 0.0))
+                        arousal = float(anno.get('arousal', 0.0))
+                        anno_dict[frame_name] = (valence, arousal)
+        
+        # Format 2: Dict with frame keys {"00000": {"valence": 0.5, "arousal": 0.2}, ...}
+        elif isinstance(annotations, dict):
+            for frame_key, values in annotations.items():
+                if isinstance(values, dict):
+                    frame_name = str(frame_key).zfill(5)
+                    valence = float(values.get('valence', 0.0))
+                    arousal = float(values.get('arousal', 0.0))
+                    anno_dict[frame_name] = (valence, arousal)
+                elif isinstance(values, (list, tuple)) and len(values) >= 2:
+                    # Format: {"00000": [valence, arousal], ...}
+                    frame_name = str(frame_key).zfill(5)
+                    valence = float(values[0])
+                    arousal = float(values[1])
+                    anno_dict[frame_name] = (valence, arousal)
+        
+        return anno_dict
     
     def __len__(self) -> int:
         return len(self.clips)
@@ -121,20 +155,32 @@ class AFEWVADataset(Dataset):
             while len(sampled_frames) < self.num_frames:
                 sampled_frames.append(sampled_frames[-1])
         
-        # Load images
+        # Load images with error handling
         images = []
         valences = []
         arousals = []
         
         for frame in sampled_frames:
-            img = Image.open(frame['path']).convert('RGB')
-            
-            if self.transform:
-                img = self.transform(img)
-            
-            images.append(img)
-            valences.append(frame['valence'])
-            arousals.append(frame['arousal'])
+            try:
+                img = Image.open(frame['path']).convert('RGB')
+                
+                if self.transform:
+                    img = self.transform(img)
+                
+                images.append(img)
+                valences.append(frame['valence'])
+                arousals.append(frame['arousal'])
+            except Exception as e:
+                print(f"Warning: Failed to load {frame['path']}: {e}")
+                # Use previous frame if available
+                if len(images) > 0:
+                    images.append(images[-1])
+                    valences.append(valences[-1])
+                    arousals.append(arousals[-1])
+        
+        # Ensure we have enough frames
+        if len(images) == 0:
+            raise RuntimeError(f"Failed to load any frames from clip {clip['clip_id']}")
         
         images = torch.stack(images)  # [L, C, H, W]
         valences = torch.tensor(valences, dtype=torch.float32)
