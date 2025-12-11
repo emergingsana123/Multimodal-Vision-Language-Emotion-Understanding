@@ -491,62 +491,111 @@ print("3. Explicitly freezes all base params before LoRA")
 
 """## Temporal Contrastive Loss"""
 
+# ANTI-COLLAPSE LOSS FUNCTION
+
 class TemporalContrastiveLoss(nn.Module):
     """
-    Improved loss to prevent collapse
+    Strong contrastive loss that prevents collapse
     """
-    def __init__(self, temperature=0.07, margin=1.0):  # Increased margin!
+    def __init__(self, temperature=0.07, margin=2.0):
         super().__init__()
         self.temperature = temperature
-        self.margin = margin
+        self.margin = margin  # Large margin!
     
     def forward(self, anchor_emb, positive_emb, negative_emb,
                 anchor_valence, positive_valence, anchor_arousal, positive_arousal):
         """
-        FIXED: Stronger loss formulation
+        Anti-collapse contrastive loss
         """
+        # Normalize embeddings (ensure unit vectors)
+        anchor_emb = F.normalize(anchor_emb, p=2, dim=1)
+        positive_emb = F.normalize(positive_emb, p=2, dim=1)
+        negative_emb = F.normalize(negative_emb, p=2, dim=1)
+        
         # Cosine similarities
         pos_sim = F.cosine_similarity(anchor_emb, positive_emb, dim=1)
         neg_sim = F.cosine_similarity(anchor_emb, negative_emb, dim=1)
         
-        # CRITICAL FIX 1: Stronger triplet loss
-        # Old: (neg_sim - pos_sim) / temperature + margin
-        # New: More aggressive penalization
+        # CRITICAL FIX 1: InfoNCE-style loss (much stronger)
+        # This forces pos_sim to be high and neg_sim to be low
+        logits = torch.cat([pos_sim.unsqueeze(1), neg_sim.unsqueeze(1)], dim=1) / self.temperature
+        labels = torch.zeros(logits.size(0), dtype=torch.long, device=logits.device)
+        infonce_loss = F.cross_entropy(logits, labels)
+        
+        # CRITICAL FIX 2: Hard triplet margin loss
+        # Ensures pos_sim - neg_sim > margin
         triplet_loss = F.relu(neg_sim - pos_sim + self.margin).mean()
         
-        # CRITICAL FIX 2: Add orthogonality loss to prevent collapse
-        # Penalize when all embeddings become similar
-        batch_mean = anchor_emb.mean(dim=0)
-        diversity_loss = -torch.var(anchor_emb, dim=0).mean()  # Encourage variance
+        # CRITICAL FIX 3: Prevent positive similarity from being too high
+        # Penalize when positives are TOO similar (> 0.9)
+        pos_penalty = F.relu(pos_sim - 0.9).mean()
         
-        # CRITICAL FIX 3: Emotion consistency (keep as is)
+        # CRITICAL FIX 4: Prevent negative similarity from being too high
+        # Negatives should be < 0.3
+        neg_penalty = F.relu(neg_sim - 0.3).mean()
+        
+        # CRITICAL FIX 5: Diversity loss to prevent all embeddings becoming same
+        # Maximize variance across batch
+        batch_var = torch.var(anchor_emb, dim=0).mean()
+        diversity_loss = 1.0 / (batch_var + 1e-6)  # Inverse of variance
+        
+        # CRITICAL FIX 6: Emotion consistency (weighted by distance)
         valence_diff = torch.abs(anchor_valence - positive_valence)
         arousal_diff = torch.abs(anchor_arousal - positive_arousal)
         emotion_distance = torch.sqrt(valence_diff**2 + arousal_diff**2)
-        emotion_weight = torch.exp(-emotion_distance / 5.0)
-        consistency_loss = ((1.0 - pos_sim) * emotion_weight).mean()
         
-        # CRITICAL FIX 4: Add hard negative mining
-        # Penalize when negative similarity is too high
-        negative_penalty = F.relu(neg_sim - 0.5).mean()  # Negatives should be < 0.5
+        # Positives with similar emotions should have higher similarity
+        emotion_weight = torch.exp(-emotion_distance / 3.0)
+        emotion_loss = ((1.0 - pos_sim) * emotion_weight).mean()
         
-        # Total loss with rebalanced weights
+        # Total loss with strong weighting
         total_loss = (
-            triplet_loss + 
-            0.3 * consistency_loss + 
-            0.1 * diversity_loss +
-            0.5 * negative_penalty
+            infonce_loss +           # Primary contrastive loss
+            2.0 * triplet_loss +     # Strong margin enforcement
+            1.0 * pos_penalty +      # Prevent collapse (pos too high)
+            2.0 * neg_penalty +      # Push negatives down
+            0.5 * diversity_loss +   # Maintain variance
+            0.3 * emotion_loss       # Emotion consistency
         )
         
         return {
             'total_loss': total_loss,
+            'infonce_loss': infonce_loss,
             'triplet_loss': triplet_loss,
-            'consistency_loss': consistency_loss,
+            'pos_penalty': pos_penalty,
+            'neg_penalty': neg_penalty,
             'diversity_loss': diversity_loss,
-            'negative_penalty': negative_penalty,
+            'emotion_loss': emotion_loss,
             'pos_sim': pos_sim.mean(),
             'neg_sim': neg_sim.mean(),
         }
+
+
+print("="*70)
+print("✅ ANTI-COLLAPSE LOSS FUNCTION")
+print("="*70)
+
+# ============================================================================
+# ALSO: CRITICAL CONFIG CHANGES
+# ============================================================================
+
+print("\n" + "="*70)
+print("ALSO UPDATE YOUR CONFIG:")
+print("="*70)
+print("""
+# Lower learning rate for stability
+config.LEARNING_RATE = 1e-4  # Instead of 2e-4
+
+# Increase weight decay for regularization
+optimizer = torch.optim.AdamW(
+    model.parameters(),
+    lr=1e-4,
+    weight_decay=0.1  # Increased from 0.01
+)
+
+# Lower batch size if still collapsing
+config.BATCH_SIZE = 16  # Instead of 32
+""")
 
 
 """## Initialize Model & Datasets"""
