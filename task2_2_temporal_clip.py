@@ -11,10 +11,10 @@ Original file is located at
 This notebook implements temporal contrastive learning using **CLIP ViT-L/14** with **LoRA adaptation**.
 
 ## Why CLIP instead of BLIP-2?
-- ✅ **7-10x faster training** (300M vs 2.7B parameters)
-- ✅ **Better emotion recognition** (55-70% vs 33-45% alignment)
-- ✅ **More efficient LoRA** (~5M vs ~40M trainable params)
-- ✅ **Training time**: 1-2 hours vs 6-8 hours
+-  **7-10x faster training** (300M vs 2.7B parameters)
+-  **Better emotion recognition** (55-70% vs 33-45% alignment)
+-  **More efficient LoRA** (~5M vs ~40M trainable params)
+-  **Training time**: 1-2 hours vs 6-8 hours
 
 ## Key Features:
 - Temporal triplet sampling from video sequences
@@ -47,7 +47,7 @@ from PIL import Image
 warnings.filterwarnings('ignore')
 sns.set_style('whitegrid')
 
-print("✅ Imports successful!")
+print(" Imports successful!")
 print(f"PyTorch: {torch.__version__}")
 print(f"CUDA: {torch.cuda.is_available()}")
 if torch.cuda.is_available():
@@ -113,7 +113,7 @@ torch.manual_seed(config.SEED)
 if torch.cuda.is_available():
     torch.cuda.manual_seed_all(config.SEED)
 
-print("✅ Config ready")
+print(" Config ready")
 print(f"Model: {config.CLIP_MODEL}")
 print(f"Device: {config.DEVICE}")
 print(f"Save dir: {config.TASK2_2_DIR}")
@@ -155,7 +155,7 @@ def load_afew_data(data_dir):
                     'arousal': frame_data.get('arousal'),
                 })
 
-    print(f"✅ Loaded {len(all_samples)} frames from {len(clip_dirs)} clips")
+    print(f" Loaded {len(all_samples)} frames from {len(clip_dirs)} clips")
     return all_samples
 
 
@@ -168,7 +168,7 @@ def organize_by_clips(samples):
     for clip_name in clips:
         clips[clip_name] = sorted(clips[clip_name], key=lambda x: x['frame_num'])
 
-    print(f"✅ Organized into {len(clips)} clips")
+    print(f" Organized into {len(clips)} clips")
     return dict(clips)
 
 
@@ -189,8 +189,8 @@ val_clips = set(clip_names[split_idx:])
 train_samples = [s for s in all_samples if s['clip_name'] in train_clips]
 val_samples = [s for s in all_samples if s['clip_name'] in val_clips]
 
-print(f"✅ Train: {len(train_samples)} frames from {len(train_clips)} clips")
-print(f"✅ Val: {len(val_samples)} frames from {len(val_clips)} clips")
+print(f" Train: {len(train_samples)} frames from {len(train_clips)} clips")
+print(f" Val: {len(val_samples)} frames from {len(val_clips)} clips")
 
 """## Temporal Triplet Dataset"""
 
@@ -201,7 +201,7 @@ class TemporalTripletDataset(Dataset):
         self.processor = processor
         self.config = config
         self.split = split
-        print(f"✅ {split} dataset: {len(samples)} frames")
+        print(f" {split} dataset: {len(samples)} frames")
 
     def __len__(self):
         return len(self.samples)
@@ -283,7 +283,7 @@ def collate_triplets(batch):
         'positive_arousals': torch.stack([b['positive_arousal'] for b in batch]),
     }
 
-print("✅ Dataset classes defined")
+print(" Dataset classes defined")
 
 """## CLIP Model with LoRA"""
 
@@ -400,7 +400,7 @@ class CLIPWithLoRA(nn.Module):
                 layer.self_attn.v_proj = new_v
                 lora_count += 1
         
-        print(f"✅ Replaced {lora_count} layers with LoRA")
+        print(f" Replaced {lora_count} layers with LoRA")
     
     def _print_trainable_parameters(self):
         """Verify only LoRA params are trainable"""
@@ -427,7 +427,7 @@ class CLIPWithLoRA(nn.Module):
         print(f"LoRA params: {lora_trainable:,}")
         
         if len(base_trainable_list) > 0:
-            print(f"\n❌ ERROR: {len(base_trainable_list)} base parameters are still trainable:")
+            print(f"\n ERROR: {len(base_trainable_list)} base parameters are still trainable:")
             for name, count in base_trainable_list[:10]:  # Show first 10
                 print(f"  - {name}: {count:,}")
             
@@ -441,11 +441,11 @@ class CLIPWithLoRA(nn.Module):
             print(f"After fix: {trainable_after:,} trainable")
         
         if percentage < 0.5:
-            print("❌ Less than 0.5% trainable - LoRA may not work")
+            print(" Less than 0.5% trainable - LoRA may not work")
         elif percentage > 10:
-            print("❌ More than 10% trainable - base not frozen!")
+            print(" More than 10% trainable - base not frozen!")
         else:
-            print("✅ Correct! Only LoRA parameters are trainable")
+            print(" Correct! Only LoRA parameters are trainable")
     
     def forward(self, pixel_values):
         """Forward pass"""
@@ -479,11 +479,11 @@ class CLIPWithLoRA(nn.Module):
         with open(path / 'lora_config.json', 'w') as f:
             json.dump(config_dict, f, indent=2)
         
-        print(f"✅ Saved to {path}")
+        print(f" Saved to {path}")
 
 
 print("="*70)
-print("✅ COMPLETE FIX: Freeze + Device")
+print(" COMPLETE FIX: Freeze + Device")
 print("="*70)
 print("1. Uses register_buffer() for frozen weights (not trainable)")
 print("2. Weights created on correct device")
@@ -563,7 +563,7 @@ class TemporalContrastiveLoss(nn.Module):
 
 
 print("="*70)
-print("✅ STABLE ANTI-COLLAPSE LOSS")
+print(" STABLE ANTI-COLLAPSE LOSS")
 print("="*70)
 print("Fixed: diversity_loss clamped to prevent explosion")
 print("Margin: 1.0 (reasonable)")
@@ -616,7 +616,7 @@ val_loader = DataLoader(
     num_workers=4, collate_fn=collate_triplets, pin_memory=True
 )
 
-print(f"\n✅ Ready to train!")
+print(f"\n Ready to train!")
 print(f"Train batches: {len(train_loader)}")
 print(f"Val batches: {len(val_loader)}")
 
@@ -753,15 +753,15 @@ for epoch in range(config.NUM_EPOCHS):
     if val_loss < best_val_loss:
         best_val_loss = val_loss
         model.save_lora_weights(config.CHECKPOINTS_DIR / 'best_model')
-        print(f"  ✅ Best model saved!")
+        print(f"   Best model saved!")
 
     # Checkpoint
     if (epoch + 1) % 5 == 0:
         model.save_lora_weights(config.CHECKPOINTS_DIR / f'checkpoint_epoch_{epoch+1}')
-        print(f"  ✅ Checkpoint saved")
+        print(f"   Checkpoint saved")
 
 print("\n" + "="*70)
-print("✅ TRAINING COMPLETE!")
+print(" TRAINING COMPLETE!")
 print("="*70)
 
 # DIAGNOSTIC CODE - Run this BEFORE training to debug
@@ -799,18 +799,18 @@ print("\n4. Testing model forward:")
 try:
     # This is what we're doing in training
     test_emb = model(anchor_px)
-    print(f"   ✅ SUCCESS! Embedding shape: {test_emb.shape}")
+    print(f"    SUCCESS! Embedding shape: {test_emb.shape}")
 except Exception as e:
-    print(f"   ❌ ERROR: {e}")
+    print(f"    ERROR: {e}")
     print(f"   Error type: {type(e).__name__}")
 
 print("\n5. Alternative: Direct call to clip_vision")
 try:
     test_output = model.clip_vision(pixel_values=anchor_px, return_dict=True)
     test_emb2 = F.normalize(test_output.pooler_output, p=2, dim=-1)
-    print(f"   ✅ Direct call SUCCESS! Embedding shape: {test_emb2.shape}")
+    print(f"    Direct call SUCCESS! Embedding shape: {test_emb2.shape}")
 except Exception as e:
-    print(f"   ❌ ERROR: {e}")
+    print(f"    ERROR: {e}")
 
 print("\n" + "=" * 70)
 print("Run this diagnostic to see where the error occurs!")
@@ -848,7 +848,7 @@ plt.tight_layout()
 plt.savefig(config.VISUALIZATIONS_DIR / 'training_curves.png', dpi=150, bbox_inches='tight')
 plt.show()
 
-print(f"✅ Saved to {config.VISUALIZATIONS_DIR / 'training_curves.png'}")
+print(f" Saved to {config.VISUALIZATIONS_DIR / 'training_curves.png'}")
 
 # Save history
 with open(config.RESULTS_DIR / 'training_history.pkl', 'wb') as f:
@@ -858,7 +858,7 @@ with open(config.RESULTS_DIR / 'training_history.pkl', 'wb') as f:
 model.save_lora_weights(config.CHECKPOINTS_DIR / 'final_model')
 
 print("="*70)
-print("🎉 TASK 2.2 COMPLETE!")
+print(" TASK 2.2 COMPLETE!")
 print("="*70)
 print(f"\nResults saved to: {config.TASK2_2_DIR}")
 print(f"  - Best model: {config.CHECKPOINTS_DIR / 'best_model'}")

@@ -69,14 +69,11 @@ RESULTS_DIR = PROJECT_ROOT / 'results'
 
 # Create all output directories
 #for directory in [PROJECT_ROOT, EMBEDDINGS_DIR, CHECKPOINTS_DIR, VISUALIZATIONS_DIR, RESULTS_DIR]:
-<<<<<<< HEAD
 #    directory.mkdir(parents=True, exist_ok=True)
-=======
 #   directory.mkdir(parents=True, exist_ok=True)
 # for directory in [PROJECT_ROOT, EMBEDDINGS_DIR, CHECKPOINTS_DIR, VISUALIZATIONS_DIR, RESULTS_DIR]:
 #    directory.mkdir(parents=True, exist_ok=True)
 
->>>>>>> d80814a (change)
 
 # Set random seeds for reproducibility
 RANDOM_SEED = 42
@@ -577,7 +574,7 @@ def create_umap_primary_visualization(umap_embeddings, metadata_df):
     plt.savefig(VISUALIZATIONS_DIR / 'umap_primary_visualization.png', dpi=150, bbox_inches='tight')
     plt.close()
     
-    print("✅ Saved: umap_primary_visualization.png")
+    print(" Saved: umap_primary_visualization.png")
 
 
 def create_pca_validation_plots(pca_embeddings, pca, metadata_df):
@@ -642,7 +639,7 @@ def create_pca_validation_plots(pca_embeddings, pca, metadata_df):
     plt.savefig(VISUALIZATIONS_DIR / 'pca_validation_analysis.png', dpi=150, bbox_inches='tight')
     plt.close()
     
-    print("✅ Saved: pca_validation_analysis.png")
+    print(" Saved: pca_validation_analysis.png")
 
 
 def create_2d_va_space_plot(metadata_df):
@@ -665,7 +662,7 @@ def create_2d_va_space_plot(metadata_df):
     plt.savefig(VISUALIZATIONS_DIR / '2d_valence_arousal_space.png', dpi=300, bbox_inches='tight')
     plt.close()
     
-    print("✅ Saved: 2d_valence_arousal_space.png")
+    print(" Saved: 2d_valence_arousal_space.png")
 
 
 def create_temporal_plots(temporal_df):
@@ -703,7 +700,7 @@ def create_temporal_plots(temporal_df):
     plt.savefig(VISUALIZATIONS_DIR / 'temporal_analysis.png', dpi=300, bbox_inches='tight')
     plt.close()
     
-    print("✅ Saved: temporal_analysis.png")
+    print(" Saved: temporal_analysis.png")
 
 
 def create_summary_report(metadata_df, embeddings, pca, correlations, temporal_df):
@@ -819,8 +816,8 @@ def main():
         else:
             metadata_df = pd.read_csv(EMBEDDINGS_DIR / 'metadata.csv')
         
-        print(f"✅ Loaded embeddings shape: {embeddings.shape}")
-        print(f"✅ Loaded metadata: {len(metadata_df)} frames")
+        print(f" Loaded embeddings shape: {embeddings.shape}")
+        print(f" Loaded metadata: {len(metadata_df)} frames")
         print("⏭️  Skipping BLIP-2 model loading and extraction (saving time!)...")
         
     else:
@@ -881,20 +878,20 @@ def main():
     create_summary_report(metadata_df, embeddings, pca, correlations, temporal_df)
     
     print("\n" + "="*80)
-    print("✅ COMPLETE ANALYSIS PIPELINE FINISHED SUCCESSFULLY!")
+    print(" COMPLETE ANALYSIS PIPELINE FINISHED SUCCESSFULLY!")
     print("="*80)
     print(f"\nAll outputs saved to: {PROJECT_ROOT}")
-    print(f"\n📁 Output Structure:")
-    print(f"  📊 Embeddings: {EMBEDDINGS_DIR}")
+    print(f"\n Output Structure:")
+    print(f"   Embeddings: {EMBEDDINGS_DIR}")
     print(f"     - blip2_embeddings.h5 (HDF5 format)")
     print(f"     - embeddings.pkl (Pickle format)")
     print(f"     - metadata.csv")
-    print(f"\n  🎨 Visualizations: {VISUALIZATIONS_DIR}")
+    print(f"\n   Visualizations: {VISUALIZATIONS_DIR}")
     print(f"     - umap_primary_visualization.png")
     print(f"     - pca_validation_analysis.png")
     print(f"     - 2d_valence_arousal_space.png")
     print(f"     - temporal_analysis.png")
-    print(f"\n  📈 Results: {RESULTS_DIR}")
+    print(f"\n   Results: {RESULTS_DIR}")
     print(f"     - umap_embeddings_2d.npy")
     print(f"     - tsne_embeddings_2d.npy")
     print(f"     - pca_embeddings.npy")
@@ -902,7 +899,7 @@ def main():
     print(f"     - comprehensive_correlations.json")
     print(f"     - temporal_analysis.csv")
     print(f"     - comprehensive_summary_report.json")
-    print(f"\n  💾 Checkpoints: {CHECKPOINTS_DIR}")
+    print(f"\n   Checkpoints: {CHECKPOINTS_DIR}")
     print("\n" + "="*80)
 
 

@@ -429,7 +429,7 @@ class TemporalEmotionDataset(Dataset):
     
     def _analyze_dataset(self):
         """Print dataset statistics"""
-        print(f"\n📊 Dataset Analysis:")
+        print(f"\n Dataset Analysis:")
         print(f"   Total windows: {len(self.windows)}")
         print(f"   Clips: {len(self.clip_to_windows)}")
         
@@ -637,7 +637,7 @@ def build_temporal_dataloaders(samples: List[Dict],
         collate_fn=temporal_emotion_collate_fn,
     )
     
-    print(f"\n✅ Dataloaders created:")
+    print(f"\n Dataloaders created:")
     print(f"   Train batches: {len(train_loader)}")
     print(f"   Val batches: {len(val_loader)}")
     
@@ -678,10 +678,10 @@ def test_dataset():
     # Load samples
     samples = checkpoint_manager.load_checkpoint('samples_final')
     if samples is None:
-        print("❌ No samples found. Run Phase 1 first.")
+        print(" No samples found. Run Phase 1 first.")
         return
     
-    print(f"✅ Loaded {len(samples)} samples")
+    print(f" Loaded {len(samples)} samples")
     
     # Initialize processor
     from transformers import VideoMAEImageProcessor
@@ -714,7 +714,7 @@ def test_dataset():
             break
     
     print(f"\n{'='*80}")
-    print("✅ DATASET TEST COMPLETE!")
+    print(" DATASET TEST COMPLETE!")
     print(f"{'='*80}")
 
 

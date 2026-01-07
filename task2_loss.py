@@ -569,7 +569,7 @@ def test_losses():
     print(f"   Metrics: {metrics}")
     
     print("\n" + "="*80)
-    print("✅ ALL LOSS TESTS PASSED!")
+    print(" ALL LOSS TESTS PASSED!")
     print("="*80)
 
 

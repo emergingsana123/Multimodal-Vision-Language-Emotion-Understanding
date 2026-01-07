@@ -67,12 +67,12 @@ def test_training_pipeline():
     
     samples = checkpoint_manager.load_checkpoint('samples_final')
     if samples is None:
-        print("❌ No samples found. Run Phase 1 first.")
+        print(" No samples found. Run Phase 1 first.")
         return False
     
     # Use only first 1000 samples for quick test
     samples = samples[:1000]
-    print(f"✅ Using {len(samples)} samples for testing")
+    print(f" Using {len(samples)} samples for testing")
     
     # Load model
     print(f"\n{'='*80}")
@@ -80,7 +80,7 @@ def test_training_pipeline():
     print(f"{'='*80}")
     
     # Initialize backbone WITHOUT LoRA (LoRA has gradient flow issues with VideoMAE)
-    print("⚠️ Note: LoRA has gradient flow issues with VideoMAE")
+    print(" Note: LoRA has gradient flow issues with VideoMAE")
     print("   Training full model instead (86M params)")
     
     backbone = VideoMAEBackbone(
@@ -88,11 +88,11 @@ def test_training_pipeline():
         freeze=False  # Don't freeze - train full model
     )
     
-    print("✅ Backbone initialized (full model trainable)")
+    print(" Backbone initialized (full model trainable)")
     print(f"   This works fine with batch_size=2-4 + gradient accumulation")
     
     # Skip LoRA application (doesn't work with VideoMAE)
-    print("\n✅ Using full model (no LoRA)")
+    print("\n Using full model (no LoRA)")
     print("   All 86,817,024 parameters trainable")
     print("   Memory efficient with small batch + gradient accumulation")
     
@@ -103,13 +103,13 @@ def test_training_pipeline():
     trainable_count = sum(p.numel() for p in trainable_params)
     total_count = sum(p.numel() for p in backbone.model.parameters())
     
-    print(f"\n📊 Final Model Statistics:")
+    print(f"\n Final Model Statistics:")
     print(f"   Trainable parameters: {trainable_count:,}")
     print(f"   Total parameters: {total_count:,}")
     print(f"   Trainable ratio: {100*trainable_count/total_count:.4f}%")
     
     if trainable_count == 0:
-        print(f"\n❌ ERROR: No trainable parameters!")
+        print(f"\n ERROR: No trainable parameters!")
         return False
     
     # Initialize processor
@@ -128,7 +128,7 @@ def test_training_pipeline():
             train_ratio=0.8
         )
     except Exception as e:
-        print(f"❌ Failed to build dataloaders: {e}")
+        print(f" Failed to build dataloaders: {e}")
         import traceback
         traceback.print_exc()
         return False
@@ -140,12 +140,12 @@ def test_training_pipeline():
     
     try:
         batch = next(iter(train_loader))
-        print(f"✅ Successfully loaded one batch")
+        print(f" Successfully loaded one batch")
         print(f"   Anchor shape: {batch['anchor'].shape}")
         print(f"   Positive shape: {batch['positive'].shape if batch['positive'] is not None else None}")
         print(f"   Negative shape: {batch['negative'].shape if batch['negative'] is not None else None}")
     except Exception as e:
-        print(f"❌ Failed to load batch: {e}")
+        print(f" Failed to load batch: {e}")
         import traceback
         traceback.print_exc()
         return False
@@ -171,7 +171,7 @@ def test_training_pipeline():
             
             embeddings = torch.cat(embeddings_list, dim=0)
             
-            print(f"✅ Forward pass successful")
+            print(f" Forward pass successful")
             print(f"   Output shape: {embeddings.shape}")
             print(f"   Output dtype: {embeddings.dtype}")
             print(f"   Output device: {embeddings.device}")
@@ -182,19 +182,19 @@ def test_training_pipeline():
     
     except RuntimeError as e:
         if "out of memory" in str(e):
-            print(f"❌ OUT OF MEMORY ERROR")
+            print(f" OUT OF MEMORY ERROR")
             print(f"   Try reducing:")
             print(f"   - batch_size (currently {config.batch_size})")
             print(f"   - num_frames (currently {config.num_frames})")
             print(f"   - Or use gradient_accumulation_steps")
             return False
         else:
-            print(f"❌ Forward pass failed: {e}")
+            print(f" Forward pass failed: {e}")
             import traceback
             traceback.print_exc()
             return False
     except Exception as e:
-        print(f"❌ Forward pass failed: {e}")
+        print(f" Forward pass failed: {e}")
         import traceback
         traceback.print_exc()
         return False
@@ -246,7 +246,7 @@ def test_training_pipeline():
             
             loss, metrics = criterion(loss_input)
             
-            print(f"✅ Loss computation successful")
+            print(f" Loss computation successful")
             print(f"   Total loss: {loss.item():.4f}")
             print(f"   Contrastive loss: {metrics.get('contrastive_loss', 0):.4f}")
             print(f"   Pos similarity: {metrics.get('mean_pos_sim', 0):.4f}")
@@ -254,19 +254,19 @@ def test_training_pipeline():
     
     except RuntimeError as e:
         if "out of memory" in str(e):
-            print(f"❌ OUT OF MEMORY during loss computation")
+            print(f" OUT OF MEMORY during loss computation")
             print(f"   Recommendations:")
             print(f"   1. Reduce batch_size to 1")
             print(f"   2. Process embeddings one at a time (already doing this)")
             print(f"   3. Reduce num_positive_pairs and num_negative_pairs")
             return False
         else:
-            print(f"❌ Loss computation failed: {e}")
+            print(f" Loss computation failed: {e}")
             import traceback
             traceback.print_exc()
             return False
     except Exception as e:
-        print(f"❌ Loss computation failed: {e}")
+        print(f" Loss computation failed: {e}")
         import traceback
         traceback.print_exc()
         return False
@@ -300,7 +300,7 @@ def test_training_pipeline():
         print(f"   Found {len(trainable_params)} trainable parameter tensors")
         
         if len(trainable_params) == 0:
-            print(f"❌ No trainable parameters found!")
+            print(f" No trainable parameters found!")
             return False
         
         optimizer = torch.optim.AdamW(trainable_params, lr=1e-5)
@@ -314,7 +314,7 @@ def test_training_pipeline():
         print(f"   Raw embeddings require_grad: {embeddings.requires_grad}")
         
         if not embeddings.requires_grad:
-            print(f"\n   ❌ ERROR: Embeddings don't have gradients after forward pass!")
+            print(f"\n    ERROR: Embeddings don't have gradients after forward pass!")
             print(f"   Checking LoRA parameters...")
             
             # Debug: Check if any LoRA params actually require grad
@@ -327,7 +327,7 @@ def test_training_pipeline():
                         break
             
             if lora_params_with_grad == 0:
-                print(f"   ❌ No LoRA parameters have requires_grad=True!")
+                print(f"    No LoRA parameters have requires_grad=True!")
                 return False
             
             print(f"\n   This means the forward pass is not using LoRA parameters.")
@@ -360,7 +360,7 @@ def test_training_pipeline():
         print(f"   Parameters with gradients: {grad_count}/{len(trainable_params)}")
         
         if grad_count == 0:
-            print(f"   ❌ No gradients computed!")
+            print(f"    No gradients computed!")
             return False
         
         # Check gradient magnitudes
@@ -369,13 +369,13 @@ def test_training_pipeline():
         
         optimizer.step()
         
-        print(f"\n✅ Backward pass successful")
+        print(f"\n Backward pass successful")
         print(f"   Loss: {loss.item():.4f}")
         print(f"   Gradients computed and applied successfully")
     
     except RuntimeError as e:
         if "out of memory" in str(e):
-            print(f"❌ OUT OF MEMORY during backward pass")
+            print(f" OUT OF MEMORY during backward pass")
             print(f"   This is the most memory-intensive operation")
             print(f"   Try:")
             print(f"   1. batch_size = 1")
@@ -383,12 +383,12 @@ def test_training_pipeline():
             print(f"   3. Clear CUDA cache between steps")
             return False
         else:
-            print(f"❌ Backward pass failed: {e}")
+            print(f" Backward pass failed: {e}")
             import traceback
             traceback.print_exc()
             return False
     except Exception as e:
-        print(f"❌ Backward pass failed: {e}")
+        print(f" Backward pass failed: {e}")
         import traceback
         traceback.print_exc()
         return False
@@ -408,24 +408,24 @@ def test_training_pipeline():
         print(f"   Usage: {100 * memory_allocated / memory_total:.1f}%")
         
         if memory_allocated / memory_total > 0.9:
-            print(f"\n⚠️ WARNING: High memory usage!")
+            print(f"\n WARNING: High memory usage!")
             print(f"   Recommended settings for full training:")
             print(f"   - batch_size = 1 or 2")
             print(f"   - gradient_accumulation_steps = 8")
             print(f"   - num_workers = 0")
         elif memory_allocated / memory_total > 0.7:
-            print(f"\n⚠️ Moderate memory usage")
+            print(f"\n Moderate memory usage")
             print(f"   Recommended settings:")
             print(f"   - batch_size = 2 or 4")
             print(f"   - gradient_accumulation_steps = 4")
         else:
-            print(f"\n✅ Good memory usage")
+            print(f"\n Good memory usage")
             print(f"   You can use:")
             print(f"   - batch_size = 4 or 8")
             print(f"   - gradient_accumulation_steps = 2")
     
     print(f"\n{'='*80}")
-    print("✅ ALL TESTS PASSED!")
+    print(" ALL TESTS PASSED!")
     print(f"{'='*80}")
     print("\nYou can now run the full training with:")
     print("python task2_phase2_train.py")
@@ -441,12 +441,12 @@ if __name__ == "__main__":
     try:
         success = test_training_pipeline()
         if not success:
-            print("\n❌ Some tests failed. Fix the issues before full training.")
+            print("\n Some tests failed. Fix the issues before full training.")
             sys.exit(1)
     except KeyboardInterrupt:
-        print("\n\n⚠️ Test interrupted by user.")
+        print("\n\n Test interrupted by user.")
     except Exception as e:
-        print(f"\n\n❌ Fatal error: {e}")
+        print(f"\n\n Fatal error: {e}")
         import traceback
         traceback.print_exc()
         sys.exit(1)

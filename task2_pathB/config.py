@@ -186,7 +186,7 @@ if __name__ == "__main__":
     print_config(config)
     
     # Verify paths
-    print("\n📁 Directory Structure:")
+    print("\n Directory Structure:")
     print(f"  Dataset: {Path(config.dataset_dir).exists()} ✓" if Path(config.dataset_dir).exists() 
           else f"  Dataset: {Path(config.dataset_dir).exists()} ✗ (will be created)")
     print(f"  Outputs: {Path(config.project_root).exists()} ✓")
@@ -196,7 +196,7 @@ if __name__ == "__main__":
     print(f"  Results: {Path(config.results_dir).exists()} ✓")
     
     # Estimate memory usage
-    print("\n💾 Estimated GPU Memory:")
+    print("\n Estimated GPU Memory:")
     print(f"  Feature extraction: ~8-10 GB")
     print(f"  Training (batch={config.batch_size}): ~15-18 GB")
     print(f"  Peak (with mixed precision): ~18-20 GB")

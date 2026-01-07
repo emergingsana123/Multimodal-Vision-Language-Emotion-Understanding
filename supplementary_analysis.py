@@ -132,7 +132,7 @@ plt.tight_layout()
 plt.savefig(VISUALIZATIONS_DIR / 'pca_comprehensive_analysis.png', dpi=300, bbox_inches='tight')
 plt.close()
 
-print("✅ Saved: pca_comprehensive_analysis.png")
+print(" Saved: pca_comprehensive_analysis.png")
 
 # ============================================================================
 # DETAILED CORRELATION ANALYSIS (Pearson + Spearman)
@@ -208,7 +208,7 @@ if has_umap:
 corr_df = pd.DataFrame(correlation_results)
 corr_df.to_csv(RESULTS_DIR / 'detailed_correlation_analysis.csv', index=False)
 
-print(f"\n✅ Saved: detailed_correlation_analysis.csv")
+print(f"\n Saved: detailed_correlation_analysis.csv")
 
 # ============================================================================
 # SUMMARY STATISTICS
@@ -236,7 +236,7 @@ print(f"  Strongest PCA-Valence correlation: {pca_corrs['valence_pearson'].abs()
 print(f"  Strongest PCA-Arousal correlation: {pca_corrs['arousal_pearson'].abs().max():.4f} ({pca_corrs.loc[pca_corrs['arousal_pearson'].abs().idxmax(), 'component']})")
 
 print("\n" + "="*80)
-print("✅ SUPPLEMENTARY ANALYSIS COMPLETE!")
+print(" SUPPLEMENTARY ANALYSIS COMPLETE!")
 print("="*80)
 print("\nGenerated files:")
 print("  1. pca_comprehensive_analysis.png - 4-panel PCA visualization with scree plots")

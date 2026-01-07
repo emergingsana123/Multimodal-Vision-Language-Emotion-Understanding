@@ -18,16 +18,16 @@ config = TemporalEmotionConfig()
 lora_path = Path(config.project_root) / 'lora_adapters' / 'backbone_with_lora.pt'
 
 if not lora_path.exists():
-    print(f"❌ No saved model found at {lora_path}")
+    print(f" No saved model found at {lora_path}")
     print("You need to run Phase 1 first!")
     exit(1)
 
-print(f"✅ Found saved model at {lora_path}")
+print(f" Found saved model at {lora_path}")
 
 # Load and inspect
 state_dict = torch.load(lora_path, map_location='cpu')
 
-print(f"\n📊 Saved State Dict Analysis:")
+print(f"\n Saved State Dict Analysis:")
 print(f"   Total keys: {len(state_dict.keys())}")
 
 # Count LoRA-specific keys
@@ -35,11 +35,11 @@ lora_keys = [k for k in state_dict.keys() if 'lora' in k.lower()]
 print(f"   LoRA keys: {len(lora_keys)}")
 
 if len(lora_keys) == 0:
-    print("\n❌ WARNING: No LoRA keys found in saved model!")
+    print("\n WARNING: No LoRA keys found in saved model!")
     print("This means LoRA was not applied during Phase 1")
     print("\nSolution: Re-run Phase 1 with correct LoRA application")
 else:
-    print(f"\n✅ LoRA keys found! Sample keys:")
+    print(f"\n LoRA keys found! Sample keys:")
     for key in list(lora_keys)[:5]:
         print(f"      {key}")
 
@@ -62,9 +62,9 @@ try:
     trainable1 = sum(p.numel() for p in backbone1.parameters() if p.requires_grad)
     print(f"   Trainable parameters: {trainable1:,}")
     if trainable1 < 100000:
-        print(f"   ❌ Too few trainable parameters!")
+        print(f"    Too few trainable parameters!")
 except Exception as e:
-    print(f"   ❌ Failed: {e}")
+    print(f"    Failed: {e}")
 
 # Method 2: Reapply LoRA then load (right way)
 print("\n2. REAPPLYING LoRA then loading (right way):")
@@ -87,17 +87,17 @@ try:
     # Now load weights
     missing, unexpected = backbone2.load_state_dict(state_dict, strict=False)
     trainable2 = sum(p.numel() for p in backbone2.parameters() if p.requires_grad)
-    print(f"\n   ✅ Trainable parameters: {trainable2:,}")
+    print(f"\n    Trainable parameters: {trainable2:,}")
     print(f"   Missing keys: {len(missing)}")
     print(f"   Unexpected keys: {len(unexpected)}")
     
     if trainable2 > 500000:
-        print(f"\n   ✅ SUCCESS! LoRA properly applied with {trainable2:,} parameters")
+        print(f"\n    SUCCESS! LoRA properly applied with {trainable2:,} parameters")
     else:
-        print(f"\n   ⚠️ Only {trainable2:,} trainable parameters (expected ~590,000)")
+        print(f"\n    Only {trainable2:,} trainable parameters (expected ~590,000)")
         
 except Exception as e:
-    print(f"   ❌ Failed: {e}")
+    print(f"    Failed: {e}")
     print("\n   Trying alternative target modules...")
     
     # Try simpler target modules
@@ -124,10 +124,10 @@ except Exception as e:
             print(f"      Trainable: {trainable3:,}")
             
             if trainable3 > 500000:
-                print(f"      ✅ This works! Use these target modules: {target_attempt}")
+                print(f"       This works! Use these target modules: {target_attempt}")
                 break
         except Exception as e2:
-            print(f"      ❌ Failed: {e2}")
+            print(f"       Failed: {e2}")
 
 print(f"\n{'='*80}")
 print("DIAGNOSIS COMPLETE")

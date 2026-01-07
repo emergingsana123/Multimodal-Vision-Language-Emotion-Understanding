@@ -125,7 +125,7 @@ def load_afew_dataset(dataset_dir: Path, config) -> List[Dict]:
             if clip_metadata['num_frames'] <= config.max_frames_per_clip:
                 clips.append(clip_metadata)
     
-    print(f"\n✅ Loaded {len(clips)} valid clips")
+    print(f"\n Loaded {len(clips)} valid clips")
     print(f"   Total frames: {sum(c['num_frames'] for c in clips):,}")
     print(f"   Avg frames per clip: {np.mean([c['num_frames'] for c in clips]):.1f}")
     
@@ -160,7 +160,7 @@ class CLIPFeatureExtractor:
         for param in self.model.parameters():
             param.requires_grad = False
         
-        print(f"✅ CLIP model loaded on {device}")
+        print(f" CLIP model loaded on {device}")
         print(f"   Feature dimension: {config.clip_feature_dim}")
         print_gpu_memory("   ")
     
@@ -278,7 +278,7 @@ def extract_all_features(config, logger):
     # Test mode: only process subset
     if config.test_mode:
         clips = clips[:config.test_num_clips]
-        logger.info(f"\n⚠️  TEST MODE: Processing only {len(clips)} clips")
+        logger.info(f"\n  TEST MODE: Processing only {len(clips)} clips")
     
     # Initialize CLIP extractor
     extractor = CLIPFeatureExtractor(config, device)
@@ -368,11 +368,11 @@ def main():
     # Override with CLI args
     if args.test:
         config.test_mode = True
-        print("\n⚠️  Running in TEST MODE (10 clips only)")
+        print("\n  Running in TEST MODE (10 clips only)")
     
     if args.no_resume:
         config.extraction_resume = False
-        print("\n⚠️  Resume disabled: will re-extract existing features")
+        print("\n  Resume disabled: will re-extract existing features")
     
     # Setup logging
     logger = setup_logging(config.logs_dir, 'feature_extraction')
@@ -390,16 +390,16 @@ def main():
         # Run extraction
         index = extract_all_features(config, logger)
         
-        logger.info("\n✅ Feature extraction completed successfully!")
+        logger.info("\n Feature extraction completed successfully!")
         logger.info(f"\nNext step: Run training with:")
         logger.info(f"  python 5_train.py")
         
     except KeyboardInterrupt:
-        logger.warning("\n⚠️  Extraction interrupted by user")
+        logger.warning("\n  Extraction interrupted by user")
         logger.info("Progress has been saved. Re-run to resume.")
     
     except Exception as e:
-        logger.error(f"\n❌ Fatal error: {e}")
+        logger.error(f"\n Fatal error: {e}")
         import traceback
         logger.error(traceback.format_exc())
         sys.exit(1)

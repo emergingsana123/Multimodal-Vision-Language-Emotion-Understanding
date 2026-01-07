@@ -409,7 +409,7 @@ class Trainer:
                 if is_best:
                     self.state.best_val_loss = val_loss
                     self.state.patience_counter = 0
-                    self.logger.info(f"🎉 New best validation loss: {val_loss:.4f}")
+                    self.logger.info(f" New best validation loss: {val_loss:.4f}")
                 else:
                     self.state.patience_counter += 1
                     self.logger.info(f"No improvement ({self.state.patience_counter}/{self.config.early_stopping_patience})")
@@ -419,7 +419,7 @@ class Trainer:
                 
                 # Early stopping
                 if self.state.patience_counter >= self.config.early_stopping_patience:
-                    self.logger.info(f"\n⚠️ Early stopping triggered!")
+                    self.logger.info(f"\n Early stopping triggered!")
                     break
             else:
                 # Save checkpoint even without validation
@@ -433,7 +433,7 @@ class Trainer:
             clear_gpu_cache()
         
         self.logger.info("\n" + "="*80)
-        self.logger.info("✅ TRAINING COMPLETE!")
+        self.logger.info(" TRAINING COMPLETE!")
         self.logger.info("="*80)
         self.logger.info(f"Best validation loss: {self.state.best_val_loss:.4f}")
         self.logger.info(f"Total time: {self.progress_tracker.format_time(self.progress_tracker.get_total_time())}")
@@ -470,7 +470,7 @@ def main():
     # Check feature extraction
     features_index = Path(config.features_cache_dir) / 'index.json'
     if not features_index.exists():
-        logger.error(f"❌ Features not extracted!")
+        logger.error(f" Features not extracted!")
         logger.error(f"Run: python 1_extract_features.py")
         sys.exit(1)
     
@@ -481,16 +481,16 @@ def main():
         # Train
         trainer.train()
         
-        logger.info("\n✅ Training completed successfully!")
+        logger.info("\n Training completed successfully!")
         logger.info(f"Checkpoints saved to: {config.checkpoints_dir}")
         logger.info(f"Logs saved to: {config.logs_dir}")
         
     except KeyboardInterrupt:
-        logger.warning("\n⚠️ Training interrupted by user")
+        logger.warning("\n Training interrupted by user")
         logger.info("Progress saved in checkpoints. Run with --resume to continue.")
     
     except Exception as e:
-        logger.error(f"\n❌ Fatal error: {e}")
+        logger.error(f"\n Fatal error: {e}")
         import traceback
         logger.error(traceback.format_exc())
         sys.exit(1)

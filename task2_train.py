@@ -47,7 +47,7 @@ try:
     UMAP_AVAILABLE = True
 except:
     UMAP_AVAILABLE = False
-    print("⚠️ UMAP not available. Install with: pip install umap-learn")
+    print(" UMAP not available. Install with: pip install umap-learn")
 
 
 # ============================================================================
@@ -158,7 +158,7 @@ class TemporalEmotionTrainer:
             betas=(0.9, 0.999),
         )
         
-        print(f"✅ Optimizer created:")
+        print(f" Optimizer created:")
         print(f"   Trainable parameters: {len(trainable_params)}")
         print(f"   Learning rate: {self.config.learning_rate}")
         print(f"   Weight decay: {self.config.weight_decay}")
@@ -181,7 +181,7 @@ class TemporalEmotionTrainer:
         
         scheduler = optim.lr_scheduler.LambdaLR(self.optimizer, lr_lambda)
         
-        print(f"✅ Scheduler created:")
+        print(f" Scheduler created:")
         print(f"   Total steps: {total_steps}")
         print(f"   Warmup steps: {warmup_steps}")
         
@@ -228,7 +228,7 @@ class TemporalEmotionTrainer:
         # Save best model
         if is_best:
             self.checkpoint_manager.save_checkpoint('best_model', checkpoint_data)
-            print(f"💾 Saved best model (val_loss: {self.state.best_val_loss:.4f})")
+            print(f" Saved best model (val_loss: {self.state.best_val_loss:.4f})")
         
         # Save epoch checkpoint
         if self.state.epoch % self.config.save_frequency == 0:
@@ -452,7 +452,7 @@ class TemporalEmotionTrainer:
             # Train
             train_loss, train_metrics = self.train_epoch()
             
-            print(f"\n📊 Training Results:")
+            print(f"\n Training Results:")
             print(f"   Loss: {train_loss:.4f}")
             print(f"   Contrastive loss: {train_metrics.get('contrastive_loss', 0):.4f}")
             print(f"   Pos similarity: {train_metrics.get('mean_pos_sim', 0):.4f}")
@@ -463,7 +463,7 @@ class TemporalEmotionTrainer:
             if (epoch + 1) % self.config.eval_frequency == 0:
                 val_loss, val_metrics = self.validate()
                 
-                print(f"\n📊 Validation Results:")
+                print(f"\n Validation Results:")
                 print(f"   Loss: {val_loss:.4f}")
                 print(f"   Contrastive loss: {val_metrics.get('contrastive_loss', 0):.4f}")
                 
@@ -472,7 +472,7 @@ class TemporalEmotionTrainer:
                 if is_best:
                     self.state.best_val_loss = val_loss
                     self.state.epochs_without_improvement = 0
-                    print(f"   🎉 New best validation loss!")
+                    print(f"    New best validation loss!")
                 else:
                     self.state.epochs_without_improvement += 1
                 
@@ -481,7 +481,7 @@ class TemporalEmotionTrainer:
                 
                 # Early stopping
                 if self.state.epochs_without_improvement >= self.config.early_stopping_patience:
-                    print(f"\n⚠️ Early stopping triggered after {self.state.epochs_without_improvement} epochs without improvement")
+                    print(f"\n Early stopping triggered after {self.state.epochs_without_improvement} epochs without improvement")
                     break
             else:
                 # Save checkpoint even without validation
@@ -492,7 +492,7 @@ class TemporalEmotionTrainer:
                 self.plot_training_curves()
         
         print(f"\n{'='*80}")
-        print("✅ TRAINING COMPLETE!")
+        print(" TRAINING COMPLETE!")
         print(f"{'='*80}")
         print(f"Best validation loss: {self.state.best_val_loss:.4f}")
         print(f"Total epochs: {self.state.epoch + 1}")
@@ -558,7 +558,7 @@ class TemporalEmotionTrainer:
         plt.savefig(results_dir / f'training_curves_epoch_{self.state.epoch:03d}.png', dpi=150)
         plt.close()
         
-        print(f"📈 Training curves saved to {results_dir}")
+        print(f" Training curves saved to {results_dir}")
 
 
 # ============================================================================
@@ -637,7 +637,7 @@ def visualize_embeddings(embeddings, valences, arousals, save_path, method='umap
     plt.savefig(save_path, dpi=150)
     plt.close()
     
-    print(f"📊 Embeddings visualization saved to {save_path}")
+    print(f" Embeddings visualization saved to {save_path}")
 
 
 # ============================================================================
@@ -672,10 +672,10 @@ def main():
     
     samples = checkpoint_manager.load_checkpoint('samples_final')
     if samples is None:
-        print("❌ No samples found. Run Phase 1 first.")
+        print(" No samples found. Run Phase 1 first.")
         return
     
-    print(f"✅ Loaded {len(samples)} samples")
+    print(f" Loaded {len(samples)} samples")
     
     # Load model
     print(f"\n{'='*80}")
@@ -684,7 +684,7 @@ def main():
     
     from transformers import VideoMAEImageProcessor
     
-    print("⚠️ Note: LoRA has gradient flow issues with VideoMAE")
+    print(" Note: LoRA has gradient flow issues with VideoMAE")
     print("   Training full model instead (86M params)")
     print("   This works well with batch_size=2-4 + gradient accumulation")
     
@@ -694,7 +694,7 @@ def main():
         freeze=False  # Don't freeze - train full model
     )
     
-    print("✅ Backbone initialized (full model trainable)")
+    print(" Backbone initialized (full model trainable)")
     
     # Verify trainable parameters
     trainable_params = sum(p.numel() for p in backbone.parameters() if p.requires_grad)
@@ -703,7 +703,7 @@ def main():
     print(f"   Trainable ratio: {100*trainable_params/total_params:.2f}%")
     
     if trainable_params == 0:
-        print("❌ ERROR: No trainable parameters found!")
+        print(" ERROR: No trainable parameters found!")
         return
     
     backbone = backbone.to(device)
@@ -711,7 +711,7 @@ def main():
     # Enable gradient checkpointing to save memory
     if hasattr(backbone.model, 'gradient_checkpointing_enable'):
         backbone.model.gradient_checkpointing_enable()
-        print("✅ Gradient checkpointing enabled (saves ~30% memory)")
+        print(" Gradient checkpointing enabled (saves ~30% memory)")
     
     # Clear GPU cache
     torch.cuda.empty_cache()
@@ -781,9 +781,9 @@ def main():
     )
     
     print(f"\n{'='*80}")
-    print("✅ PHASE 2C COMPLETE!")
+    print(" PHASE 2C COMPLETE!")
     print(f"{'='*80}")
-    print(f"\n📁 Results saved to: {config.project_root}")
+    print(f"\n Results saved to: {config.project_root}")
     print(f"   - checkpoints/training_state.pkl")
     print(f"   - checkpoints/best_model.pkl")
     print(f"   - results/training_curves_*.png")
@@ -795,8 +795,8 @@ if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        print("\n\n⚠️ Training interrupted. Progress saved in checkpoints.")
+        print("\n\n Training interrupted. Progress saved in checkpoints.")
     except Exception as e:
-        print(f"\n\n❌ Error: {e}")
+        print(f"\n\n Error: {e}")
         import traceback
         traceback.print_exc()

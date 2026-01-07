@@ -98,7 +98,7 @@ class CheckpointManager:
         torch.save(data, temp_path)
         temp_path.rename(checkpoint_path)
         
-        print(f"💾 Checkpoint saved: {checkpoint_path.name}")
+        print(f" Checkpoint saved: {checkpoint_path.name}")
         
         if is_best:
             best_path = self.checkpoint_dir / 'best_model.pt'
@@ -122,10 +122,10 @@ class CheckpointManager:
         
         try:
             data = torch.load(checkpoint_path, map_location='cpu')
-            print(f"✅ Checkpoint loaded: {checkpoint_path.name}")
+            print(f" Checkpoint loaded: {checkpoint_path.name}")
             return data
         except Exception as e:
-            print(f"❌ Failed to load checkpoint {checkpoint_path.name}: {e}")
+            print(f" Failed to load checkpoint {checkpoint_path.name}: {e}")
             return None
     
     def load_latest(self) -> Optional[Dict[str, Any]]:
@@ -226,7 +226,7 @@ def create_feature_index(features_cache_dir: Path) -> Dict[str, Any]:
     with open(index_path, 'w') as f:
         json.dump(index, f, indent=2)
     
-    print(f"\n✅ Feature index created:")
+    print(f"\n Feature index created:")
     print(f"   Clips: {len(index['clips'])}")
     print(f"   Total frames: {index['total_frames']}")
     print(f"   Saved to: {index_path}")
@@ -397,5 +397,5 @@ if __name__ == "__main__":
     print("✓ Progress tracker works")
     
     print("\n" + "=" * 80)
-    print("✅ ALL UTILITY TESTS PASSED")
+    print(" ALL UTILITY TESTS PASSED")
     print("=" * 80)

@@ -145,7 +145,7 @@ class CheckpointManager:
         
         # Rename to final checkpoint (atomic operation)
         temp_path.rename(checkpoint_path)
-        print(f"💾 Checkpoint saved: {name}")
+        print(f" Checkpoint saved: {name}")
     
     def load_checkpoint(self, name: str):
         """Load checkpoint if exists"""
@@ -221,7 +221,7 @@ def load_afew_va_dataset(data_dir: Path, checkpoint_manager: CheckpointManager):
     # Check if already loaded
     samples = checkpoint_manager.load_checkpoint('dataset_loaded')
     if samples is not None:
-        print(f"✅ Loaded dataset from checkpoint: {len(samples)} samples")
+        print(f" Loaded dataset from checkpoint: {len(samples)} samples")
         return samples
     
     print("="*80)
@@ -300,7 +300,7 @@ def initialize_backbone(config, checkpoint_manager: CheckpointManager):
     backbone = backbone.to(device)
     
     trainable, total = backbone.get_trainable_parameters()
-    print(f"\n📊 Model Statistics (Before LoRA):")
+    print(f"\n Model Statistics (Before LoRA):")
     print(f"   Total parameters: {total:,}")
     print(f"   Trainable parameters: {trainable:,}")
     
@@ -316,7 +316,7 @@ def apply_lora(backbone, config, checkpoint_manager: CheckpointManager):
     
     # Check if LoRA already applied
     if checkpoint_manager.checkpoint_exists('lora_applied'):
-        print("✅ LoRA already applied (loading from checkpoint)")
+        print(" LoRA already applied (loading from checkpoint)")
         checkpoint_data = checkpoint_manager.load_checkpoint('lora_applied')
         # Load LoRA state if saved
         return backbone
@@ -347,7 +347,7 @@ def apply_lora(backbone, config, checkpoint_manager: CheckpointManager):
     backbone.model = lora_model
     
     trainable, total = backbone.get_trainable_parameters()
-    print(f"\n📊 Model Statistics (After LoRA):")
+    print(f"\n Model Statistics (After LoRA):")
     print(f"   Total parameters: {total:,}")
     print(f"   Trainable parameters: {trainable:,}")
     print(f"   Trainable ratio: {100 * trainable / total:.4f}%")
@@ -388,9 +388,9 @@ class PseudoLabelGenerator:
             self.model = HSEmotionRecognizer(model_name='enet_b0_8_best_afew')
             self.emotion_labels = ['Anger', 'Contempt', 'Disgust', 'Fear', 
                                   'Happy', 'Neutral', 'Sad', 'Surprise']
-            print("✅ HSEmotion loaded")
+            print(" HSEmotion loaded")
         except Exception as e:
-            print(f"⚠️ HSEmotion failed: {e}")
+            print(f" HSEmotion failed: {e}")
     
     def _init_fer(self):
         """Initialize FER model"""
@@ -399,9 +399,9 @@ class PseudoLabelGenerator:
             self.model = FER(mtcnn=True)
             self.emotion_labels = ['angry', 'disgust', 'fear', 'happy', 
                                   'sad', 'surprise', 'neutral']
-            print("✅ FER loaded")
+            print(" FER loaded")
         except Exception as e:
-            print(f"⚠️ FER failed: {e}")
+            print(f" FER failed: {e}")
     
     def predict_emotion(self, image_path: str):
         """Predict emotion from image"""
@@ -481,7 +481,7 @@ def generate_pseudo_labels(samples: List[Dict],
     cache_name = f'pseudo_labels_{generator.model_name}'
     pseudo_labels = checkpoint_manager.load_checkpoint(cache_name)
     if pseudo_labels is not None:
-        print(f"✅ Loaded {len(pseudo_labels)} pseudo-labels from checkpoint")
+        print(f" Loaded {len(pseudo_labels)} pseudo-labels from checkpoint")
         return pseudo_labels
     
     print("="*80)
@@ -512,7 +512,7 @@ def generate_pseudo_labels(samples: List[Dict],
     # Final save
     checkpoint_manager.save_checkpoint(cache_name, pseudo_labels)
     
-    print(f"\n✅ Generated {len(pseudo_labels)} pseudo-labels")
+    print(f"\n Generated {len(pseudo_labels)} pseudo-labels")
     print(f"   Failed: {failed_count}")
     print(f"   Success rate: {100 * len(pseudo_labels) / len(samples):.1f}%")
     
@@ -546,7 +546,7 @@ def add_pseudo_labels_to_samples(samples: List[Dict],
             sample['pseudo_confidence'] = 0.0
             sample['use_pseudo'] = False
     
-    print(f"✅ Pseudo-labels added")
+    print(f" Pseudo-labels added")
     print(f"   High-confidence samples: {high_confidence_count}")
     
     return samples
@@ -566,7 +566,7 @@ def compute_statistics(samples: List[Dict]):
     valid_samples = [s for s in samples if s['valence'] is not None and s['arousal'] is not None]
     
     if len(valid_samples) == 0:
-        print("⚠️ No valid samples found")
+        print(" No valid samples found")
         return
     
     valences = [s['valence'] for s in valid_samples]
@@ -647,7 +647,7 @@ def main():
     with open(PROJECT_ROOT / 'config.json', 'w') as f:
         json.dump(config_dict, f, indent=2)
     
-    print(f"\n📁 Project directories created:")
+    print(f"\n Project directories created:")
     print(f"   Root: {PROJECT_ROOT}")
     print(f"   Checkpoints: {CHECKPOINTS_DIR}")
     print(f"   LoRA: {LORA_DIR}")
@@ -667,7 +667,7 @@ def main():
     
     DATA_DIR = Path(config.data_dir)
     if not DATA_DIR.exists():
-        print(f"❌ ERROR: Data directory not found: {DATA_DIR}")
+        print(f" ERROR: Data directory not found: {DATA_DIR}")
         print("Please update the data_dir in the configuration")
         return
     
@@ -681,7 +681,7 @@ def main():
     try:
         backbone = initialize_backbone(config, checkpoint_manager)
     except Exception as e:
-        print(f"❌ ERROR loading backbone: {e}")
+        print(f" ERROR loading backbone: {e}")
         print("This might be due to network issues. The model will be downloaded on first run.")
         import traceback
         traceback.print_exc()
@@ -695,7 +695,7 @@ def main():
     try:
         backbone = apply_lora(backbone, config, checkpoint_manager)
     except Exception as e:
-        print(f"❌ ERROR applying LoRA: {e}")
+        print(f" ERROR applying LoRA: {e}")
         import traceback
         traceback.print_exc()
         return
@@ -716,11 +716,11 @@ def main():
     try:
         with torch.no_grad():
             embeddings = backbone.get_embeddings(dummy_video)
-            print(f"✅ Model test passed!")
+            print(f" Model test passed!")
             print(f"   Output shape: {embeddings.shape}")
             print(f"   Embeddings normalized: {torch.allclose(embeddings.norm(dim=-1), torch.ones(batch_size).to(device), atol=1e-5)}")
     except Exception as e:
-        print(f"❌ Model test failed: {e}")
+        print(f" Model test failed: {e}")
         import traceback
         traceback.print_exc()
         return
@@ -738,7 +738,7 @@ def main():
             device=config.device
         )
     except Exception as e:
-        print(f"⚠️ Warning: Pseudo-label generator initialization failed: {e}")
+        print(f" Warning: Pseudo-label generator initialization failed: {e}")
         print("Continuing without pseudo-labels...")
         pseudo_generator = None
     
@@ -762,7 +762,7 @@ def main():
                 confidence_threshold=config.pseudo_confidence_threshold
             )
         except Exception as e:
-            print(f"⚠️ Warning: Pseudo-label generation failed: {e}")
+            print(f" Warning: Pseudo-label generation failed: {e}")
             print("Continuing without pseudo-labels...")
     else:
         print("\n⏭️  Skipping pseudo-label generation")
@@ -775,9 +775,9 @@ def main():
     # Save model state
     try:
         torch.save(backbone.state_dict(), LORA_DIR / 'backbone_with_lora.pt')
-        print("💾 Model state saved")
+        print(" Model state saved")
     except Exception as e:
-        print(f"⚠️ Warning: Could not save model state: {e}")
+        print(f" Warning: Could not save model state: {e}")
     
     # Save samples
     checkpoint_manager.save_checkpoint('samples_final', samples)
@@ -803,13 +803,13 @@ def main():
     
     # Final Summary
     print("\n" + "="*80)
-    print("✅ PHASE 1 COMPLETE!")
+    print(" PHASE 1 COMPLETE!")
     print("="*80)
-    print(f"\n📊 Summary:")
+    print(f"\n Summary:")
     print(f"   Total samples: {len(samples):,}")
     print(f"   Valid samples: {len([s for s in samples if s['valence'] is not None]):,}")
     print(f"   With pseudo-labels: {len([s for s in samples if s.get('pseudo_emotion')]):,}")
-    print(f"\n📁 Output files saved to: {PROJECT_ROOT}")
+    print(f"\n Output files saved to: {PROJECT_ROOT}")
     print(f"   - config.json")
     print(f"   - phase1_summary.json")
     print(f"   - checkpoints/ (multiple checkpoints for resume)")
@@ -823,10 +823,10 @@ if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        print("\n\n⚠️ Interrupted by user. Progress has been saved in checkpoints.")
+        print("\n\n Interrupted by user. Progress has been saved in checkpoints.")
         print("You can resume by running this script again.")
     except Exception as e:
-        print(f"\n\n❌ Fatal error: {e}")
+        print(f"\n\n Fatal error: {e}")
         import traceback
         traceback.print_exc()
-        print("\n💾 Check the checkpoints directory for saved progress.")
+        print("\n Check the checkpoints directory for saved progress.")

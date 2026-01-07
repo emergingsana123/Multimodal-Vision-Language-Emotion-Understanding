@@ -181,7 +181,7 @@ class TemporalFeatureDataset(Dataset):
             all_valences.extend(window['valences'])
             all_arousals.extend(window['arousals'])
         
-        print(f"\n📊 Dataset Statistics:")
+        print(f"\n Dataset Statistics:")
         print(f"   Total windows: {len(self.windows)}")
         print(f"   Clips: {len(self.clips)}")
         print(f"   Valence: mean={np.mean(all_valences):.2f}, std={np.std(all_valences):.2f}")
@@ -389,7 +389,7 @@ def build_dataloaders(config) -> Tuple[DataLoader, DataLoader]:
         drop_last=False
     )
     
-    print(f"\n✅ Dataloaders created:")
+    print(f"\n Dataloaders created:")
     print(f"   Train batches: {len(train_loader)}")
     print(f"   Val batches: {len(val_loader)}")
     print(f"   Batch size: {config.batch_size}")
@@ -437,5 +437,5 @@ if __name__ == "__main__":
             break
     
     print("\n" + "="*80)
-    print("✅ DATASET TEST COMPLETE!")
+    print(" DATASET TEST COMPLETE!")
     print("="*80)

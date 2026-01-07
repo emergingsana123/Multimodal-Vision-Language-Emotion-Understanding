@@ -260,7 +260,7 @@ if __name__ == "__main__":
     with torch.no_grad():
         output = model(dummy_input)
     
-    print(f"✅ Forward pass successful!")
+    print(f" Forward pass successful!")
     print(f"   Input shape: {dummy_input.shape}")
     print(f"   Output shape: {output.shape}")
     print(f"   Output normalized: {torch.allclose(output.norm(dim=-1), torch.ones(batch_size), atol=1e-5)}")
@@ -278,7 +278,7 @@ if __name__ == "__main__":
     total_params = sum(1 for _ in model.parameters())
     
     print(f"   Parameters with gradients: {has_grad}/{total_params}")
-    print(f"   ✅ Gradient flow working!")
+    print(f"    Gradient flow working!")
     
     # Test with larger batch (memory check)
     print("\n4. Testing with larger batch (batch_size=18)...")
@@ -294,12 +294,12 @@ if __name__ == "__main__":
         peak_memory = torch.cuda.max_memory_allocated() / 1e9
         print(f"   Output shape: {output_large.shape}")
         print(f"   Peak memory: {peak_memory:.2f} GB")
-        print(f"   ✅ Fits comfortably in 20GB!")
+        print(f"    Fits comfortably in 20GB!")
     else:
-        print("   ⚠️ CUDA not available, skipping GPU test")
+        print("    CUDA not available, skipping GPU test")
     
     print("\n" + "="*80)
-    print("✅ ALL MODEL TESTS PASSED!")
+    print(" ALL MODEL TESTS PASSED!")
     print("="*80)
     print("\n💡 Model is ready for training!")
     print("   - No LoRA complications")

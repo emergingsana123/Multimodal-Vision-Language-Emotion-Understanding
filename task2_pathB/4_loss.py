@@ -131,6 +131,6 @@ if __name__ == "__main__":
     print(f"Neg sim: {metrics['mean_neg_sim']:.4f} (should be ~-0.3 to 0.3)")
     
     if abs(metrics['mean_pos_sim']) < 2.0:
-        print("✅ CORRECT - similarities in valid range!")
+        print(" CORRECT - similarities in valid range!")
     else:
-        print("❌ WRONG - similarities too high!")
+        print(" WRONG - similarities too high!")
